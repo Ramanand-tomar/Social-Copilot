@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@clerk/nextjs";
@@ -48,6 +48,18 @@ const AIWriterDialog = dynamic(
 );
 
 export default function ComposePage() {
+  // useSearchParams bails out of static pre-rendering and Next.js 16
+  // requires it to be read inside a Suspense boundary so the rest of
+  // the tree can stream. The actual composer lives in ComposePageInner
+  // below; this wrapper exists purely to satisfy that requirement.
+  return (
+    <Suspense fallback={null}>
+      <ComposePageInner />
+    </Suspense>
+  );
+}
+
+function ComposePageInner() {
   const { user } = useUser();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
