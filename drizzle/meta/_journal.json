@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1775883273076,
+      "tag": "0000_organic_cannonball",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775902678121,
+      "tag": "0001_numerous_sabra",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776240000000,
+      "tag": "0002_integrity_notifications",
+      "breakpoints": true
+    }
+  ]
+}

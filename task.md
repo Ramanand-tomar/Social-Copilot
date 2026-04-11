@@ -1,0 +1,53 @@
+# Task List - T4: Post Composer & Inngest Integration
+
+- [x] **1. Infrastructure & Dependencies**
+    - [x] Install `inngest`, `imagekit`, `emoji-picker-react` via npm
+    - [x] Set up Inngest client in `lib/inngest/client.ts`
+    - [x] Set up Inngest handler in `app/api/inngest/route.ts`
+- [x] **2. Inngest Functions (Background Jobs)**
+    - [x] **Migration**: Implement `token-refresh` Inngest function (v4 signature)
+    - [x] Implement `post-publish` Inngest function (multi-platform, v4 signature)
+- [x] **3. AI & Media Integrations**
+    - [x] Gemini wrapper for AI post generation in `lib/gemini.ts`
+    - [x] ImageKit wrapper for AI transformations in `lib/imagekit.ts`
+    - [x] Create `/api/ai/generate` route
+    - [x] Create `/api/media/upload` route (ImageKit signature)
+- [x] **4. Composer UI Components**
+    - [x] `AIWriterDialog.tsx` for prompt-based generation
+    - [x] `PlatformSelector.tsx` (Multi-select Chips)
+    - [x] `MediaUpload.tsx` with ImageKit & AI Transforms
+    - [x] `PostPreview.tsx` (Per-platform mocks)
+- [x] **5. Main Composer Page**
+    - [x] Implement `/compose` page layout
+    - [x] Integrate Editor, Platform Select, Media, and Preview
+    - [x] Implement "Publish Now" logic
+    - [x] Implement "Schedule" logic (trigger Inngest)
+- [x] **6. Final Verification**
+    - [x] Build verification (`npm run build`) - **PASSED ✅**
+    - [x] Fix SSR/Hydration & TypeScript issues
+- [x] **7. Dashboard Shell & Theming**
+    - [x] Update `layout.tsx` background to `#0a0a1a`
+    - [x] Rebuild `Sidebar.tsx` (Routes, Categories, Dark Theme)
+    - [x] Update `TopNav.tsx` (Dark Theme, Search, New Post Link)
+- [x] **8. Auth Pages**
+    - [x] Update `sign-in` page background
+    - [x] Update `sign-up` page background
+- [x] **9. Page Refactoring**
+    - [x] Remove redundant backgrounds in `calendar/page.tsx`
+    - [x] Remove redundant backgrounds in `auto-reply/page.tsx`
+- [x] **10. Analytics Content**
+    - [x] Create `analytics/page.tsx` "Coming Soon" placeholder
+- [x] **11. Verification**
+    - [x] Verify navigation and theme consistency across all pages
+- [x] **12. Data & Logic (FIX-3)**
+    - [x] Fix `lib/encryption.ts` lazy key initialization
+    - [x] Unify `lib/inngest/client.ts` to single instance
+    - [x] Update `accounts/page.tsx` to use API plan source
+    - [x] Implement real profile fetch for Twitter/X
+    - [x] Implement real profile fetch for Instagram
+    - [x] Create `components/dashboard/DashboardCharts.tsx` (Client component)
+    - [x] Convert `app/dashboard/page.tsx` to Server Component
+    - [x] Implement real DB fetching for stats and activity
+    - [x] Verify build stability (`npm run build`)
+- [x] **13. Auth UX & Session Handling**
+    - [x] Fix Clerk `<SignIn />` render warning via middleware redirect
