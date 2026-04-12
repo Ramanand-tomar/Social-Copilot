@@ -14,15 +14,16 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ platform: string }> }
 ) {
+  // Must mirror the origin used when building the OAuth URL in the
+  // connect route — otherwise the token exchange's redirect_uri check
+  // fails and Meta/Twitter reject the request.
+  const appUrl = getAppUrlFromRequest(req);
+
   const { userId: clerkId } = await auth();
   if (!clerkId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Must mirror the origin used when building the OAuth URL in the
-  // connect route — otherwise the token exchange's redirect_uri check
-  // fails and Meta/Twitter reject the request.
-  const appUrl = getAppUrlFromRequest(req);
   const platformId = (await params).platform as Platform;
   const platform = platforms[platformId];
   const code = req.nextUrl.searchParams.get("code");
@@ -32,8 +33,23 @@ export async function GET(
     return NextResponse.json({ error: "Invalid request" }, { status: 400 });
   }
 
-  if (!(await consumeOAuthState(state, clerkId, platformId))) {
-    return NextResponse.redirect(`${appUrl}/accounts?error=invalid_state`);
+  // Consume the one-time state. Wrap in try/catch so a DB-level failure
+  // (e.g. missing `oauth_states` table in production) redirects with a
+  // clear error code instead of bubbling an opaque 500 to the browser.
+  try {
+    if (!(await consumeOAuthState(state, clerkId, platformId))) {
+      return NextResponse.redirect(`${appUrl}/accounts?error=invalid_state`);
+    }
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        event: "oauth.callback.state_consume_failed",
+        platformId,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return NextResponse.redirect(`${appUrl}/accounts?error=state_unavailable`);
   }
 
   // Refuse platforms where we don't have real profile fetching — otherwise
