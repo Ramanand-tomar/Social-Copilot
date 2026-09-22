@@ -33,15 +33,31 @@ export const createPostSchema = z
   .object({
     content: z.string().max(10_000).optional().default(""),
     mediaUrls: z.array(z.string().url()).max(10).optional().default([]),
-    accountIds: z.array(uuid).min(1).max(50),
+    accountIds: z.array(uuid).max(50).optional().default([]),
     scheduledAt: isoDate.nullable().optional(),
     scheduledTimezone: ianaTimezone.nullable().optional(),
-    status: postStatus.optional(),
+    status: postStatus.optional().default("draft"),
   })
-  .refine((data) => (data.content?.length ?? 0) > 0 || (data.mediaUrls?.length ?? 0) > 0, {
-    message: "Post must have either content or media",
-    path: ["content"],
-  });
+  .refine(
+    (data) => {
+      if (data.status === "draft") return true;
+      return (data.accountIds?.length ?? 0) >= 1;
+    },
+    {
+      message: "At least one social account must be selected to publish or schedule",
+      path: ["accountIds"],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.status === "draft") return true;
+      return (data.content?.length ?? 0) > 0 || (data.mediaUrls?.length ?? 0) > 0;
+    },
+    {
+      message: "Post must have either content or media to publish or schedule",
+      path: ["content"],
+    },
+  );
 
 export const updatePostSchema = z.object({
   content: z.string().max(10_000).optional(),

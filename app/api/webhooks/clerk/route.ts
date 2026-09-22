@@ -2,7 +2,7 @@ import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users, notifications } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 export async function POST(req: Request) {
@@ -89,6 +89,14 @@ export async function POST(req: Request) {
       .where(eq(users.clerkId, id));
   }
 
+  if (eventType === "user.deleted") {
+    const { id } = evt.data as any;
+    if (id) {
+      await db.delete(users).where(eq(users.clerkId, id));
+    }
+    return new Response("", { status: 200 });
+  }
+
   // Handle Clerk Billing Subscription Events
   if (eventType === "subscription.created" || eventType === "subscription.updated") {
     const { id, user_id, plan_id, status } = evt.data as any;
@@ -96,9 +104,6 @@ export async function POST(req: Request) {
     const proPlanId = process.env.NEXT_PUBLIC_CLERK_PRO_PLAN_ID;
     const businessPlanId = process.env.NEXT_PUBLIC_CLERK_BUSINESS_PLAN_ID;
 
-    // Deterministic mapping against configured Clerk plan IDs only.
-    // No substring inference — unknown IDs must be rejected loudly so
-    // billing state never silently downgrades a paying user to free.
     const planMap = new Map<string, "pro" | "business">();
     if (proPlanId) planMap.set(proPlanId, "pro");
     if (businessPlanId) planMap.set(businessPlanId, "business");
@@ -115,15 +120,25 @@ export async function POST(req: Request) {
           clerkUserId: user_id,
           planId: plan_id ?? null,
           status: status ?? null,
-          configuredPlanIds: {
-            pro: proPlanId ? "set" : "missing",
-            business: businessPlanId ? "set" : "missing",
-          },
-          message:
-            "Clerk subscription webhook received an unrecognized plan_id. Refusing to mutate user plan.",
         }),
       );
-      return new Response("Unknown plan_id", { status: 422 });
+
+      const [targetUser] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.clerkId, user_id));
+
+      if (targetUser) {
+        await db.insert(notifications).values({
+          userId: targetUser.id,
+          kind: "billing.updated",
+          title: "Billing Configuration Error",
+          body: `Received an unrecognized plan ID (${plan_id}) from billing webhook. Your current plan was preserved.`,
+          data: { error: true, planId: plan_id },
+        });
+      }
+
+      return new Response("Unknown plan_id received, plan preserved", { status: 200 });
     }
 
     await db

@@ -10,8 +10,24 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Social Copilot",
-  description: "Multi-Platform Post Scheduler with AI Features",
+  title: {
+    default: "Social Copilot — Multi-Platform Social Media Automation",
+    template: "%s · Social Copilot",
+  },
+  description: "Schedule, publish, and automate engagement across nine social networks with AI captions and image transformations.",
+  openGraph: {
+    title: "Social Copilot — Multi-Platform Social Media Automation",
+    description: "Schedule, publish, and automate engagement across nine social networks from a single dashboard.",
+    url: "https://social-copilot-ten.vercel.app",
+    siteName: "Social Copilot",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Social Copilot",
+    description: "Schedule and automate your social media across 9 networks.",
+  },
 };
 
 import { Toaster } from "@/components/ui/sonner";

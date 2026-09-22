@@ -36,6 +36,17 @@ export function getStrictestContentLimit(platformIds: readonly Platform[]): numb
   return Number.isFinite(min) ? min : 10_000;
 }
 
+export function isConfigured(platformId: Platform): boolean {
+  const p = platforms[platformId];
+  if (!p) return false;
+  const { clientId, clientSecret } = p;
+  if (!clientId || !clientSecret) return false;
+  if (clientId.toLowerCase().startsWith("your_") || clientSecret.toLowerCase().startsWith("your_")) {
+    return false;
+  }
+  return true;
+}
+
 export const platforms: Record<Platform, PlatformConfig> = {
   instagram: {
     // "Instagram API with Instagram Login" — Meta's current OAuth flow for
@@ -92,7 +103,7 @@ export const platforms: Record<Platform, PlatformConfig> = {
     name: "LinkedIn",
     authorizationUrl: "https://www.linkedin.com/oauth/v2/authorization",
     tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
-    scopes: ["w_member_social", "r_liteprofile"],
+    scopes: ["openid", "profile", "email", "w_member_social"],
     clientId: process.env.LINKEDIN_CLIENT_ID,
     clientSecret: process.env.LINKEDIN_CLIENT_SECRET,
     maxContentLength: 3000,

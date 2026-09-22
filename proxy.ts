@@ -3,9 +3,13 @@ import { NextResponse } from "next/server";
 
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/privacy(.*)",
+  "/terms(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/api/webhooks(.*)"
+  "/api/webhooks(.*)",
+  "/api/inngest(.*)",
+  "/api/health(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
@@ -20,6 +24,9 @@ export default clerkMiddleware(async (auth, req) => {
   }
 
   if (!userId && !isPublicRoute(req)) {
+    if (req.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
     return redirectToSignIn();
   }
 

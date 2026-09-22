@@ -1,27 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { platforms, Platform } from "@/lib/social-platforms";
+import { platforms, Platform, isConfigured } from "@/lib/social-platforms";
 import { db } from "@/lib/db";
 import { socialAccounts } from "@/lib/db/schema";
 import { eq, count } from "drizzle-orm";
 import { getPlanLimits } from "@/lib/plan-limits";
 import { getAppUrlFromRequest } from "@/lib/env";
-import { signOAuthState } from "@/lib/oauth-state";
+import { signOAuthState, generatePKCE } from "@/lib/oauth-state";
 import { ensureUserFromClerk } from "@/lib/users";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ platform: string }> }
 ) {
-  // Resolve the app URL outside the try so the catch can always redirect
-  // back to /accounts with a query-string error instead of dumping a
-  // generic "HTTP 500" page at the user.
   const appUrl = getAppUrlFromRequest(req);
 
   try {
     const { userId: clerkId } = await auth();
     if (!clerkId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
     const platformId = (await params).platform as Platform;
@@ -31,19 +28,12 @@ export async function GET(
       return NextResponse.json({ error: "Invalid platform" }, { status: 400 });
     }
 
-    const clientId = platform.clientId;
-    if (!clientId || !platform.clientSecret) {
-      // Structured log so Vercel surfaces the missing env vars clearly
-      // in the runtime logs rather than as an opaque 500.
+    if (!isConfigured(platformId)) {
       console.error(
         JSON.stringify({
           level: "error",
           event: "oauth.connect.platform_not_configured",
           platformId,
-          missing: {
-            clientId: !clientId,
-            clientSecret: !platform.clientSecret,
-          },
         }),
       );
       return NextResponse.redirect(
@@ -51,7 +41,8 @@ export async function GET(
       );
     }
 
-    // Plan limit check
+    const clientId = platform.clientId!;
+
     const user = await ensureUserFromClerk(clerkId);
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
@@ -65,19 +56,25 @@ export async function GET(
     }
 
     const redirectUri = `${appUrl}/api/accounts/callback/${platformId}`;
-    const state = await signOAuthState(clerkId, platformId);
 
-    // Standard OAuth 2.0 params that every supported provider accepts.
+    let codeVerifier: string | undefined;
     const searchParams = new URLSearchParams({
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: "code",
       scope: platform.scopes.join(" "),
-      state,
     });
 
-    // Google-specific params. Sending these to Twitter/Meta/etc. either errors
-    // on strict validators or gets silently dropped, neither of which we want.
+    if (platformId === "twitter") {
+      const pkce = generatePKCE();
+      codeVerifier = pkce.codeVerifier;
+      searchParams.set("code_challenge", pkce.codeChallenge);
+      searchParams.set("code_challenge_method", "S256");
+    }
+
+    const state = await signOAuthState(clerkId, platformId, codeVerifier);
+    searchParams.set("state", state);
+
     if (platformId === "youtube") {
       searchParams.set("access_type", "offline");
       searchParams.set("prompt", "consent");

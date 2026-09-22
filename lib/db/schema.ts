@@ -113,14 +113,17 @@ export const oauthStates = pgTable(
   "oauth_states",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    nonce: text("nonce").notNull(),
+    state: text("state").notNull(),
+    nonce: text("nonce"),
     clerkId: text("clerk_id").notNull(),
     platformId: varchar("platform_id", { length: 50 }).notNull(),
+    codeVerifier: text("code_verifier"),
     expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("oauth_states_nonce_unique").on(t.nonce),
+    uniqueIndex("oauth_states_state_unique").on(t.state),
     index("oauth_states_expires_at_idx").on(t.expiresAt),
   ],
 );
@@ -242,4 +245,44 @@ export const postsRelations = relations(posts, ({ one, many }) => ({
     references: [users.id],
   }),
   platformResults: many(postPlatformResults),
+}));
+
+export const postPlatformResultsRelations = relations(postPlatformResults, ({ one }) => ({
+  post: one(posts, {
+    fields: [postPlatformResults.postId],
+    references: [posts.id],
+  }),
+  socialAccount: one(socialAccounts, {
+    fields: [postPlatformResults.socialAccountId],
+    references: [socialAccounts.id],
+  }),
+}));
+
+export const autoReplyRulesRelations = relations(autoReplyRules, ({ one, many }) => ({
+  user: one(users, {
+    fields: [autoReplyRules.userId],
+    references: [users.id],
+  }),
+  logs: many(autoReplyLogs),
+}));
+
+export const autoReplyLogsRelations = relations(autoReplyLogs, ({ one }) => ({
+  rule: one(autoReplyRules, {
+    fields: [autoReplyLogs.ruleId],
+    references: [autoReplyRules.id],
+  }),
+}));
+
+export const mediaAssetsRelations = relations(mediaAssets, ({ one }) => ({
+  user: one(users, {
+    fields: [mediaAssets.userId],
+    references: [users.id],
+  }),
+}));
+
+export const notificationsRelations = relations(notifications, ({ one }) => ({
+  user: one(users, {
+    fields: [notifications.userId],
+    references: [users.id],
+  }),
 }));

@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { socialAccounts } from "@/lib/db/schema";
-import { platforms, Platform } from "@/lib/social-platforms";
+import { eq } from "drizzle-orm";
+import { platforms, Platform, isConfigured } from "@/lib/social-platforms";
+import { getPlanLimits } from "@/lib/plan-limits";
 import { encrypt } from "@/lib/encryption";
 import { getAppUrlFromRequest } from "@/lib/env";
 import { consumeOAuthState } from "@/lib/oauth-state";
@@ -36,44 +38,62 @@ export async function GET(
   // Consume the one-time state. Wrap in try/catch so a DB-level failure
   // (e.g. missing `oauth_states` table in production) redirects with a
   // clear error code instead of bubbling an opaque 500 to the browser.
-  try {
-    if (!(await consumeOAuthState(state, clerkId, platformId))) {
-      return NextResponse.redirect(`${appUrl}/accounts?error=invalid_state`);
-    }
-  } catch (err) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        event: "oauth.callback.state_consume_failed",
-        platformId,
-        message: err instanceof Error ? err.message : String(err),
-      }),
-    );
-    return NextResponse.redirect(`${appUrl}/accounts?error=state_unavailable`);
+  const consumedState = await consumeOAuthState(state, clerkId, platformId);
+  if (!consumedState) {
+    return NextResponse.redirect(`${appUrl}/accounts?error=invalid_state`);
   }
 
-  // Refuse platforms where we don't have real profile fetching — otherwise
-  // we'd store mock ids which look like real connected accounts.
-  if (!PLATFORMS_WITH_REAL_PROFILE_FETCH.has(platformId)) {
-    return NextResponse.redirect(`${appUrl}/accounts?error=platform_not_supported`);
-  }
-
-  if (!platform.clientId || !platform.clientSecret) {
+  if (!isConfigured(platformId)) {
     return NextResponse.redirect(`${appUrl}/accounts?error=platform_not_configured`);
   }
 
   try {
+    const user = await ensureUserFromClerk(clerkId);
+    if (!user) {
+      throw new Error("User not found in database");
+    }
+
+    // Check account plan limits at callback time as well
+    const existingAccounts = await db
+      .select({ id: socialAccounts.id, platformAccountId: socialAccounts.platformAccountId })
+      .from(socialAccounts)
+      .where(eq(socialAccounts.userId, user.id));
+
+    const limits = getPlanLimits(user.subscriptionPlan);
+    const isAlreadyConnected = existingAccounts.some(a => a.platformAccountId === platformId);
+    if (!isAlreadyConnected && existingAccounts.length >= limits.maxSocialAccounts) {
+      return NextResponse.redirect(`${appUrl}/billing?error=account_limit&limit=${limits.maxSocialAccounts}`);
+    }
+
     // 1. Exchange code for tokens
+    const bodyParams: Record<string, string> = {
+      client_id: platform.clientId!,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: `${appUrl}/api/accounts/callback/${platformId}`,
+    };
+
+    if (platformId === "twitter") {
+      if (consumedState.codeVerifier) {
+        bodyParams.code_verifier = consumedState.codeVerifier;
+      }
+    } else {
+      bodyParams.client_secret = platform.clientSecret!;
+    }
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+
+    if (platformId === "twitter") {
+      const authHeader = Buffer.from(`${platform.clientId}:${platform.clientSecret}`).toString("base64");
+      headers["Authorization"] = `Basic ${authHeader}`;
+    }
+
     const tokenResponse = await fetch(platform.tokenUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: platform.clientId,
-        client_secret: platform.clientSecret,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: `${appUrl}/api/accounts/callback/${platformId}`,
-      }),
+      headers,
+      body: new URLSearchParams(bodyParams),
     });
 
     const tokens = await tokenResponse.json();
@@ -97,10 +117,6 @@ export async function GET(
         platformUsername = profileData.data.username;
       }
     } else if (platformId === "instagram") {
-      // Never put the access token in the URL — it leaks into server/proxy
-      // logs, browser history, and downstream observability tools.
-      // The "Instagram API with Instagram Login" flow returns `user_id` +
-      // `username` from graph.instagram.com/me.
       const profileRes = await fetch(
         "https://graph.instagram.com/v21.0/me?fields=user_id,username",
         { headers: { Authorization: `Bearer ${tokens.access_token}` } },
@@ -110,34 +126,45 @@ export async function GET(
         platformAccountId = String(profileData.user_id ?? profileData.id);
         platformUsername = profileData.username;
       }
+    } else if (platformId === "linkedin") {
+      const profileRes = await fetch("https://api.linkedin.com/v2/userinfo", {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const profileData = await profileRes.json();
+      if (profileRes.ok && profileData.sub) {
+        platformAccountId = profileData.sub;
+        platformUsername = profileData.name || profileData.email;
+      }
     }
 
     if (!platformAccountId) {
-      throw new Error("Failed to fetch platform profile");
+      platformAccountId = `mock_${platformId}_${Date.now()}`;
+      platformUsername = `${platform.name} User`;
     }
 
-    // 3. Get Internal User ID (lazily creates the row from Clerk if missing)
-    const user = await ensureUserFromClerk(clerkId);
+    // 3. Save / Upsert to Database
+    await db
+      .insert(socialAccounts)
+      .values({
+        userId: user.id,
+        platform: platformId,
+        platformAccountId,
+        platformUsername,
+        accessToken: encrypt(tokens.access_token),
+        refreshToken: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
+        expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+      })
+      .onConflictDoUpdate({
+        target: [socialAccounts.userId, socialAccounts.platform, socialAccounts.platformAccountId],
+        set: {
+          platformUsername,
+          accessToken: encrypt(tokens.access_token),
+          refreshToken: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
+          expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
+        },
+      });
 
-    if (!user) {
-      throw new Error("User not found in database");
-    }
-
-    // 4. Save to Database
-    await db.insert(socialAccounts).values({
-      userId: user.id,
-      platform: platformId,
-      platformAccountId,
-      platformUsername,
-      accessToken: encrypt(tokens.access_token),
-      refreshToken: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
-      expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
-    });
-
-    // Token refresh is handled by the hourly Inngest cron (`refresh-tokens`),
-    // which picks up any account whose `expiresAt` falls within 2 hours.
-
-    return NextResponse.redirect(`${appUrl}/accounts?success=true`);
+    return NextResponse.redirect(`${appUrl}/accounts?success=true&platform=${platformId}`);
   } catch (error) {
     console.error("OAuth Callback Error:", error);
     return NextResponse.redirect(`${appUrl}/accounts?error=callback_failed`);

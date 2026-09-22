@@ -28,36 +28,37 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return badRequest(parsed.error);
     const { content, mediaUrls, scheduledAt, scheduledTimezone, accountIds, status } = parsed.data;
 
-    // Resolve the selected accounts to platforms and enforce the strictest
-    // per-platform content length. Also verifies the caller owns each account.
-    const accountsForUser = await db
-      .select({ id: socialAccounts.id, platform: socialAccounts.platform })
-      .from(socialAccounts)
-      .where(and(eq(socialAccounts.userId, user.id), inArray(socialAccounts.id, accountIds)));
+    const targetAccountIds = accountIds ?? [];
+    let accountsForUser: { id: string; platform: string }[] = [];
 
-    if (accountsForUser.length !== accountIds.length) {
-      return NextResponse.json(
-        { error: "invalid_accounts", message: "One or more selected accounts don't belong to you." },
-        { status: 400 },
-      );
-    }
+    if (targetAccountIds.length > 0) {
+      accountsForUser = await db
+        .select({ id: socialAccounts.id, platform: socialAccounts.platform })
+        .from(socialAccounts)
+        .where(and(eq(socialAccounts.userId, user.id), inArray(socialAccounts.id, targetAccountIds)));
 
-    const limit = getStrictestContentLimit(accountsForUser.map((a) => a.platform as Platform));
-    if ((content ?? "").length > limit) {
-      return NextResponse.json(
-        {
-          error: "content_too_long",
-          limit,
-          message: `Post is ${content!.length} characters but the strictest selected platform allows ${limit}.`,
-        },
-        { status: 400 },
-      );
+      if (accountsForUser.length !== targetAccountIds.length) {
+        return NextResponse.json(
+          { error: "invalid_accounts", message: "One or more selected accounts don't belong to you." },
+          { status: 400 },
+        );
+      }
+
+      const limit = getStrictestContentLimit(accountsForUser.map((a) => a.platform as Platform));
+      if ((content ?? "").length > limit) {
+        return NextResponse.json(
+          {
+            error: "content_too_long",
+            limit,
+            message: `Post is ${content!.length} characters but the strictest selected platform allows ${limit}.`,
+          },
+          { status: 400 },
+        );
+      }
     }
 
     const isScheduled = !!scheduledAt || status === "scheduled";
 
-    // Plan check for scheduled posts — run inside a transaction with the
-    // insert so a rapid burst can't each pass the count and then all insert.
     const newPost = await db.transaction(async (tx) => {
       if (isScheduled) {
         const [{ value: scheduledPostsCount }] = await tx
@@ -81,20 +82,20 @@ export async function POST(req: NextRequest) {
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         scheduledTimezone: scheduledTimezone ?? null,
         status: status || (isScheduled ? "scheduled" : "posted"),
-        selectedAccounts: accountIds,
+        selectedAccounts: targetAccountIds,
       }).returning();
       return created;
     });
 
-    if (newPost.status === "posted") {
+    if (newPost.status === "posted" && targetAccountIds.length > 0) {
       await inngest.send({
         name: "app/post.publish",
-        data: { postId: newPost.id, accountIds },
+        data: { postId: newPost.id, accountIds: targetAccountIds },
       });
-    } else if (newPost.status === "scheduled" && scheduledAt) {
+    } else if (newPost.status === "scheduled" && scheduledAt && targetAccountIds.length > 0) {
       await inngest.send({
         name: "app/post.publish",
-        data: { postId: newPost.id, accountIds },
+        data: { postId: newPost.id, accountIds: targetAccountIds },
         ts: new Date(scheduledAt).getTime(),
       });
     }
@@ -108,6 +109,7 @@ export async function POST(req: NextRequest) {
           limitName: "Scheduled Posts",
           message: error.message,
           limit: error.limit,
+          upgradeRequired: true,
         },
         { status: 403 },
       );

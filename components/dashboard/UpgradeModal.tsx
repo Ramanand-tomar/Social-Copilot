@@ -10,8 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Check, Sparkles, Zap, Rocket, ShieldCheck } from "lucide-react";
+import { Check, Zap, Rocket, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface UpgradeModalProps {
@@ -46,7 +45,7 @@ export const UpgradeModal = ({
             </DialogTitle>
             <DialogDescription className="text-zinc-400 text-sm leading-relaxed pt-2">
               {limitName ? (
-                <>You've reached your maximum allowance for <span className="text-white font-semibold">{limitName}</span> on the Free plan.</>
+                <>You&apos;ve reached your maximum allowance for <span className="text-white font-semibold">{limitName}</span> on the Free plan.</>
               ) : description}
             </DialogDescription>
           </DialogHeader>

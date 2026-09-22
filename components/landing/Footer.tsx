@@ -17,16 +17,16 @@ export default function Footer() {
               Empowering creators and brands to master the social game with AI-driven automation and deep analytics.
             </p>
             <div className="flex items-center gap-4">
-              <Link href="#" className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+              <Link href="https://x.com" aria-label="X (Twitter)" className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
                 <X className="w-4 h-4 text-gray-400" />
               </Link>
-              <Link href="#" className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+              <Link href="https://instagram.com" aria-label="Instagram" className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
                 <Camera className="w-4 h-4 text-gray-400" />
               </Link>
-              <Link href="#" className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+              <Link href="https://linkedin.com" aria-label="LinkedIn" className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
                 <Briefcase className="w-4 h-4 text-gray-400" />
               </Link>
-              <Link href="#" className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
+              <Link href="https://social-copilot-ten.vercel.app" aria-label="Official Website" className="p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
                 <Globe className="w-4 h-4 text-gray-400" />
               </Link>
             </div>
@@ -37,27 +37,27 @@ export default function Footer() {
             <ul className="space-y-4">
               <li><Link href="#features" className="text-gray-400 text-sm hover:text-white transition-colors">Features</Link></li>
               <li><Link href="#pricing" className="text-gray-400 text-sm hover:text-white transition-colors">Pricing</Link></li>
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">Integrations</Link></li>
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">API Docs</Link></li>
+              <li><Link href="/accounts" className="text-gray-400 text-sm hover:text-white transition-colors">Integrations</Link></li>
+              <li><Link href="/api/health" className="text-gray-400 text-sm hover:text-white transition-colors">API Health</Link></li>
             </ul>
           </div>
 
           <div>
             <h5 className="text-white font-bold mb-6">Company</h5>
             <ul className="space-y-4">
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">About Us</Link></li>
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">Careers</Link></li>
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">Blog</Link></li>
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">Contact</Link></li>
+              <li><Link href="/" className="text-gray-400 text-sm hover:text-white transition-colors">About Us</Link></li>
+              <li><Link href="/privacy" className="text-gray-400 text-sm hover:text-white transition-colors">Careers</Link></li>
+              <li><Link href="/" className="text-gray-400 text-sm hover:text-white transition-colors">Blog</Link></li>
+              <li><Link href="/privacy" className="text-gray-400 text-sm hover:text-white transition-colors">Contact</Link></li>
             </ul>
           </div>
 
           <div>
             <h5 className="text-white font-bold mb-6">Legal</h5>
             <ul className="space-y-4">
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">Privacy Policy</Link></li>
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">Terms of Service</Link></li>
-              <li><Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">Cookie Policy</Link></li>
+              <li><Link href="/privacy" className="text-gray-400 text-sm hover:text-white transition-colors">Privacy Policy</Link></li>
+              <li><Link href="/terms" className="text-gray-400 text-sm hover:text-white transition-colors">Terms of Service</Link></li>
+              <li><Link href="/privacy" className="text-gray-400 text-sm hover:text-white transition-colors">Cookie Policy</Link></li>
             </ul>
           </div>
         </div>
@@ -67,8 +67,8 @@ export default function Footer() {
             © {new Date().getFullYear()} SocialCopilot Inc. All rights reserved.
           </p>
           <div className="flex gap-8">
-            <Link href="#" className="text-gray-500 text-xs hover:text-white">Status</Link>
-            <Link href="#" className="text-gray-500 text-xs hover:text-white">Security</Link>
+            <Link href="/api/health" className="text-gray-500 text-xs hover:text-white">Status</Link>
+            <Link href="/privacy" className="text-gray-500 text-xs hover:text-white">Security</Link>
           </div>
         </div>
       </div>

@@ -56,8 +56,6 @@ export default function BillingPage() {
     );
   }
 
-  // Fetch finished but returned nothing (network error, auth lost, etc).
-  // Show a recoverable error state instead of crashing on destructure.
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center py-40 gap-4 text-center">
@@ -75,7 +73,7 @@ export default function BillingPage() {
           className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-6 h-10 flex items-center gap-2"
         >
           <RefreshCcw className="w-4 h-4" />
-          Retry
+          <span>Retry</span>
         </Button>
       </div>
     );
@@ -93,8 +91,8 @@ export default function BillingPage() {
         "2 Social Accounts",
         "5 Scheduled Posts",
         "1 Auto-Reply Rule",
-        "500MB Media Storage",
-        "10 AI Captions /mo"
+        "500 MB Media Storage",
+        "10 AI Captions /mo",
       ],
       current: plan === "free",
     },
@@ -107,9 +105,8 @@ export default function BillingPage() {
         "10 Social Accounts",
         "100 Scheduled Posts",
         "10 Auto-Reply Rules",
-        "10GB Media Storage",
+        "10 GB Media Storage",
         "500 AI Captions /mo",
-        "Advanced Analytics"
       ],
       current: plan === "pro",
       popular: true,
@@ -118,17 +115,16 @@ export default function BillingPage() {
       name: "Business",
       id: "business",
       price: "$99",
-      description: "Unlimited power for agencies and large teams.",
+      description: "High capacity for agencies and active teams.",
       features: [
         "100 Social Accounts",
-        "Unlimited Posts",
-        "Unlimited Auto-Reply",
-        "100GB Media Storage",
-        "Unlimited AI Support",
-        "Custom Branding"
+        "9,999 Scheduled Posts",
+        "9,999 Auto-Reply Rules",
+        "100 GB Media Storage",
+        "9,999 AI Captions /mo",
       ],
       current: plan === "business",
-    }
+    },
   ];
 
   const usageMeters = [
@@ -140,52 +136,52 @@ export default function BillingPage() {
   ];
 
   return (
-    <div className="flex-1 h-full bg-black min-h-screen">
-      <div className="max-w-[1200px] mx-auto p-6 lg:p-10 space-y-12">
+    <div className="flex-1 min-h-screen bg-[#0a0a1a] p-4 sm:p-6 lg:p-10 min-w-0">
+      <div className="max-w-[1200px] mx-auto space-y-10 min-w-0">
         
+        {/* Header */}
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+            <CreditCard className="w-7 h-7 text-indigo-400" />
+            <span>Billing & Subscription</span>
+          </h1>
+          <p className="text-xs sm:text-sm text-zinc-400">
+            View active plan quotas, current usage metrics, and upgrade options.
+          </p>
+        </div>
+
         {/* Current Plan Banner */}
-        <Card className="bg-zinc-900 border-zinc-800 overflow-hidden relative">
+        <Card className="bg-[#0f0f23] border-white/10 overflow-hidden relative rounded-3xl">
           <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 blur-[100px] -z-10" />
-          <CardHeader className="p-8">
+          <CardHeader className="p-6 sm:p-8">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-0">
                 <Badge className="bg-indigo-500/10 text-indigo-400 border-indigo-500/20 mb-2">
                   Active Subscription
                 </Badge>
-                <CardTitle className="text-4xl font-black text-white capitalize flex items-center gap-3">
-                  {plan} Plan
-                  <Zap className="w-6 h-6 text-indigo-400 fill-indigo-400" />
+                <CardTitle className="text-3xl sm:text-4xl font-black text-white capitalize flex items-center gap-3">
+                  <span>{plan} Plan</span>
+                  <Zap className="w-6 h-6 text-indigo-400 fill-indigo-400 shrink-0" />
                 </CardTitle>
-                <CardDescription className="text-zinc-500 max-w-md">
-                  Manage your subscription, payment methods and invoices securely through Clerk.
+                <CardDescription className="text-zinc-400 text-xs sm:text-sm max-w-md">
+                  Manage your subscription, payment methods, and invoices securely through Clerk Billing.
                 </CardDescription>
               </div>
-              <div className="flex gap-3">
-                {/*
-                  Manage Billing routes to /settings, where <UserProfile />
-                  embeds Clerk's billing/subscription management section.
-                  Once Clerk Billing is enabled on the instance the user
-                  sees their plan, invoices, and payment methods there.
-                */}
+              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto shrink-0">
                 <Link
                   href="/settings"
                   className={cn(
                     buttonVariants({ variant: "outline" }),
-                    "bg-zinc-800 border-zinc-700 h-11 px-6 rounded-xl hover:bg-zinc-700 text-white",
+                    "bg-white/5 border-white/10 h-11 px-6 rounded-2xl hover:bg-white/10 text-white font-semibold text-xs sm:text-sm min-h-11 w-full sm:w-auto justify-center",
                   )}
                 >
                   Manage Billing
                 </Link>
-                {/*
-                  Upgrade Now jumps to the plan comparison + pricing grid
-                  further down the page. Individual plan cards route to
-                  /settings where Clerk Billing drives the actual checkout.
-                */}
                 <a
                   href="#compare-plans"
                   className={cn(
                     buttonVariants(),
-                    "bg-indigo-600 hover:bg-indigo-500 text-white h-11 px-6 rounded-xl shadow-[0_0_15px_rgba(79,70,229,0.3)]",
+                    "bg-indigo-600 hover:bg-indigo-500 text-white h-11 px-6 rounded-2xl shadow-[0_0_15px_rgba(79,70,229,0.3)] font-semibold text-xs sm:text-sm min-h-11 w-full sm:w-auto justify-center",
                   )}
                 >
                   Upgrade Now
@@ -197,80 +193,81 @@ export default function BillingPage() {
 
         {/* Usage Grid */}
         <div className="space-y-4">
-           <h2 className="text-lg font-semibold text-zinc-300 flex items-center gap-2">
+          <h2 className="text-base sm:text-lg font-semibold text-zinc-200 flex items-center gap-2">
             <Activity className="w-5 h-5 text-indigo-400" />
-            Plan Usage
+            <span>Plan Usage</span>
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {usageMeters.map((meter) => {
               const percentage = Math.min(Math.round((meter.used / meter.limit) * 100), 100);
+              const formattedUnit = meter.unit ? ` ${meter.unit}` : "";
               return (
-                <Card key={meter.label} className="bg-zinc-900 border-zinc-800">
-                  <CardContent className="p-6 space-y-4">
+                <Card key={meter.label} className="bg-white/5 border-white/10 rounded-2xl">
+                  <CardContent className="p-5 space-y-3">
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
-                        <meter.icon className="w-4 h-4 text-zinc-500" />
-                        <span className="text-xs font-medium text-zinc-300">{meter.label}</span>
+                        <meter.icon className="w-4 h-4 text-zinc-400 shrink-0" />
+                        <span className="text-xs font-medium text-zinc-200">{meter.label}</span>
                       </div>
-                      <span className="text-[10px] font-bold text-zinc-500">
-                        {meter.used}{meter.unit && ` ${meter.unit}`} / {meter.limit}{meter.unit && ` ${meter.unit}`}
+                      <span className="text-[11px] font-bold text-zinc-400 font-mono">
+                        {meter.used}{formattedUnit} / {meter.limit}{formattedUnit}
                       </span>
                     </div>
-                    <Progress value={percentage} className="h-1.5 bg-zinc-800" />
-                    <p className="text-[10px] text-zinc-500 text-right">
+                    <Progress value={percentage} className="h-2 bg-white/10" />
+                    <p className="text-[10px] text-zinc-400 text-right">
                       {percentage}% consumed
                     </p>
                   </CardContent>
                 </Card>
-              )
+              );
             })}
           </div>
         </div>
 
         {/* Comparison Cards */}
-        <div id="compare-plans" className="space-y-8 pt-8 border-t border-zinc-900 scroll-mt-24">
+        <div id="compare-plans" className="space-y-8 pt-8 border-t border-white/10 scroll-mt-24">
           <div className="text-center space-y-2">
-            <h2 className="text-3xl font-bold text-white tracking-tight">Compare Plans</h2>
-            <p className="text-zinc-500 text-sm">Find the perfect plan for your social media strategy.</p>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Compare Plans</h2>
+            <p className="text-zinc-400 text-xs sm:text-sm">Find the perfect plan for your social media strategy.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
             {pricingPlans.map((p) => (
               <Card key={p.id} className={cn(
-                "bg-zinc-950 border-zinc-900 flex flex-col relative transition-all duration-300 hover:scale-[1.02]",
-                p.popular && "border-indigo-500/50 shadow-[0_0_40px_rgba(79,70,229,0.1)] scale-105 z-10",
-                p.current && "ring-2 ring-emerald-500/20"
+                "bg-[#0f0f23] border-white/10 flex flex-col relative transition-all duration-300 rounded-3xl",
+                p.popular && "border-indigo-500/50 shadow-[0_0_40px_rgba(79,70,229,0.15)]",
+                p.current && "ring-2 ring-emerald-500/40"
               )}>
                 {p.popular && (
                   <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-600 text-[10px] font-bold text-white px-3 py-1 rounded-full uppercase tracking-widest shadow-lg">
                     Most Popular
                   </div>
                 )}
-                <CardHeader className="space-y-4 p-8">
+                <CardHeader className="space-y-3 p-6 sm:p-8">
                   <div className="space-y-1">
-                    <CardTitle className="text-xl font-bold">{p.name}</CardTitle>
-                    <p className="text-xs text-zinc-500">{p.description}</p>
+                    <CardTitle className="text-xl font-bold text-white">{p.name}</CardTitle>
+                    <p className="text-xs text-zinc-400 leading-relaxed">{p.description}</p>
                   </div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-black text-white">{p.price}</span>
-                    <span className="text-xs text-zinc-500">/ month</span>
+                    <span className="text-3xl sm:text-4xl font-black text-white">{p.price}</span>
+                    <span className="text-xs text-zinc-400">/ month</span>
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 px-8 pb-8">
-                  <ul className="space-y-4">
+                <CardContent className="flex-1 px-6 sm:px-8 pb-6">
+                  <ul className="space-y-3">
                     {p.features.map(f => (
-                      <li key={f} className="flex items-center gap-3 text-sm text-zinc-400">
-                        <Check className="w-4 h-4 text-emerald-500 min-w-4" />
-                        {f}
+                      <li key={f} className="flex items-center gap-3 text-xs sm:text-sm text-zinc-300">
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>{f}</span>
                       </li>
                     ))}
                   </ul>
                 </CardContent>
-                <CardFooter className="p-8 pt-0 mt-auto">
+                <CardFooter className="p-6 sm:p-8 pt-0 mt-auto">
                   {p.current ? (
                     <Button
                       disabled
-                      className="w-full h-12 rounded-xl font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 hover:bg-emerald-500/20 pointer-events-none"
+                      className="w-full h-11 rounded-2xl font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 pointer-events-none text-xs sm:text-sm"
                     >
                       Your Current Plan
                     </Button>
@@ -279,8 +276,8 @@ export default function BillingPage() {
                       href="/settings"
                       className={cn(
                         buttonVariants(),
-                        "w-full h-12 rounded-xl font-bold transition-all",
-                        p.popular ? "bg-white text-black hover:bg-zinc-200" : "bg-zinc-800 text-white hover:bg-zinc-700",
+                        "w-full h-11 rounded-2xl font-bold transition-all text-xs sm:text-sm flex items-center justify-center",
+                        p.popular ? "bg-white text-black hover:bg-zinc-200" : "bg-white/10 text-white hover:bg-white/20",
                       )}
                     >
                       {`Upgrade to ${p.name}`}
@@ -293,28 +290,28 @@ export default function BillingPage() {
         </div>
 
         {/* Security Footer */}
-        <div className="flex flex-col md:flex-row justify-between items-center py-10 border-t border-zinc-900 gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-center py-8 border-t border-white/10 gap-6">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-emerald-500/10 rounded-2xl">
-               <ShieldCheck className="w-6 h-6 text-emerald-500" />
+            <div className="p-3 bg-emerald-500/10 rounded-2xl shrink-0">
+              <ShieldCheck className="w-6 h-6 text-emerald-400" />
             </div>
             <div>
               <p className="text-sm font-bold text-white">Encrypted Transactions</p>
-              <p className="text-xs text-zinc-500">We utilize Clerk & Stripe for global payment security.</p>
+              <p className="text-xs text-zinc-400">We utilize Clerk & Stripe for global payment security.</p>
             </div>
           </div>
           <div className="flex gap-4">
-             <Link
-               href="/settings"
-               className={cn(
-                 buttonVariants({ variant: "ghost" }),
-                 "text-zinc-500 hover:text-white flex items-center gap-2",
-               )}
-             >
-               <History className="w-4 h-4" />
-               View Invoice History
-               <ExternalLink className="w-3 h-3" />
-             </Link>
+            <Link
+              href="/settings"
+              className={cn(
+                buttonVariants({ variant: "ghost" }),
+                "text-zinc-400 hover:text-white flex items-center gap-2 text-xs",
+              )}
+            >
+              <History className="w-4 h-4" />
+              <span>View Invoice History</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Link>
           </div>
         </div>
       </div>

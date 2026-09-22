@@ -12,19 +12,19 @@ import {
   Eye, 
   Layout,
   MessageSquare,
-  Hash,
   Smile,
   Loader2,
   ChevronRight,
   ShieldCheck,
-  Activity
+  Save,
+  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { platforms, Platform, getStrictestContentLimit } from "@/lib/social-platforms";
-import { UpgradeModal } from "@/components/dashboard/UpgradeModal";
+import { getStrictestContentLimit, Platform } from "@/lib/social-platforms";
+import { useUpgradeModal } from "@/components/ui/UpgradeModal";
 import { cn } from "@/lib/utils";
 import { Theme } from "emoji-picker-react";
 import dynamic from "next/dynamic";
@@ -48,10 +48,6 @@ const AIWriterDialog = dynamic(
 );
 
 export default function ComposePage() {
-  // useSearchParams bails out of static pre-rendering and Next.js 16
-  // requires it to be read inside a Suspense boundary so the rest of
-  // the tree can stream. The actual composer lives in ComposePageInner
-  // below; this wrapper exists purely to satisfy that requirement.
   return (
     <Suspense fallback={null}>
       <ComposePageInner />
@@ -63,6 +59,8 @@ function ComposePageInner() {
   const { user } = useUser();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
+  const { openUpgradeModal } = useUpgradeModal();
+
   const editingPostId = searchParams.get("id");
   const prefillMediaUrl = searchParams.get("mediaUrl");
 
@@ -73,27 +71,10 @@ function ComposePageInner() {
   const [scheduledAt, setScheduledAt] = useState<string>("");
   const [isScheduling, setIsScheduling] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
-  const [isUpgradeOpen, setIsUpgradeOpen] = useState(false);
-  const [limitName, setLimitName] = useState("");
-  const [hydratingFromQuery, setHydratingFromQuery] = useState<boolean>(
-    !!editingPostId,
-  );
+  const [hydratingFromQuery, setHydratingFromQuery] = useState<boolean>(!!editingPostId);
 
-  // Fetch selected platforms details for preview
-  // Note: For simplicity, we'll get the first platform selected for the preview tab
-  const [previewPlatform, setPreviewPlatform] = useState<Platform>("twitter");
-
-  // Hydrate the form from query params on mount.
-  //
-  //   ?id=<postId>          -> load the post and prefill content, media,
-  //                            selected accounts, and (if scheduled) the
-  //                            schedule time.
-  //   ?mediaUrl=<url>       -> seed the media gallery with a single asset
-  //                            from /media -> "Use in Post".
-  //
-  // Both deep-links land on the same composer; if both are present we
-  // prefer the post (it already has its own media).
   useEffect(() => {
     let cancelled = false;
 
@@ -113,8 +94,6 @@ function ComposePageInner() {
           );
 
           if (post.scheduledAt) {
-            // <input type="datetime-local"> wants "YYYY-MM-DDTHH:mm" in
-            // local time, NOT a UTC ISO string.
             const d = new Date(post.scheduledAt);
             const pad = (n: number) => String(n).padStart(2, "0");
             const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
@@ -136,13 +115,46 @@ function ComposePageInner() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingPostId, prefillMediaUrl]);
 
-  // Strictest per-platform character limit among the currently selected
-  // accounts. Shown next to the counter and used to disable publish.
   const contentLimit = getStrictestContentLimit(selectedPlatforms);
   const overLimit = content.length > contentLimit;
+
+  const handleSaveDraft = async () => {
+    if (!content && mediaUrls.length === 0) {
+      toast.error("Add some content or media to save as draft");
+      return;
+    }
+
+    setSavingDraft(true);
+    try {
+      const endpoint = editingPostId ? `/api/posts/${editingPostId}` : "/api/posts";
+      const method = editingPostId ? "PATCH" : "POST";
+
+      const res = await fetch(endpoint, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content,
+          mediaUrls,
+          accountIds: selectedAccountIds,
+          status: "draft",
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.message || "Failed to save draft");
+      }
+
+      toast.success("Draft saved successfully!");
+      await queryClient.invalidateQueries({ queryKey: ["posts"] });
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save draft");
+    } finally {
+      setSavingDraft(false);
+    }
+  };
 
   const handlePublish = async (isScheduled: boolean) => {
     if (!content && mediaUrls.length === 0) {
@@ -164,9 +176,6 @@ function ComposePageInner() {
 
     setPublishing(true);
     try {
-      // `datetime-local` returns a naive string like "2025-06-01T14:00".
-      // We serialize to UTC (browser's local tz → UTC) AND send the IANA zone
-      // alongside so the server can display "2:00 PM America/Toronto" later.
       const scheduledAtIso = isScheduled ? new Date(scheduledAt).toISOString() : null;
       const scheduledTimezone = isScheduled
         ? Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -191,8 +200,7 @@ function ComposePageInner() {
       if (!res.ok) {
         const data = await res.json();
         if (res.status === 403 && data.error === "limit_reached") {
-          setLimitName(data.limitName || "Scheduled Posts");
-          setIsUpgradeOpen(true);
+          openUpgradeModal(data.message, data.limitName);
           return;
         }
         throw new Error(data.message || "Failed to create post");
@@ -201,33 +209,31 @@ function ComposePageInner() {
       toast.success(isScheduled ? "Post scheduled successfully!" : "Post published to queue!");
       await queryClient.invalidateQueries({ queryKey: ["posts"] });
 
-      // Reset form
       setContent("");
       setMediaUrls([]);
       setSelectedAccountIds([]);
       setScheduledAt("");
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || "Failed to publish post");
     } finally {
       setPublishing(false);
     }
   };
 
   const onEmojiClick = (emojiData: any) => {
-    setContent(prev => prev + emojiData.emoji);
+    setContent((prev) => prev + emojiData.emoji);
     setShowEmoji(false);
   };
 
   return (
-    <div className="p-8 max-w-[1600px] mx-auto h-[calc(100vh-6rem)]">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full">
-        
-        {/* Left Column: Editor (8 cols) */}
-        <div className="lg:col-span-7 space-y-6 overflow-y-auto pr-4 scrollbar-hide">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-              <Layout className="w-8 h-8 text-indigo-400" />
-              Compose Post
+    <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto min-h-screen lg:min-h-0 lg:h-[calc(100vh-6rem)]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 lg:h-full">
+        {/* Left Column: Editor (7 cols) */}
+        <div className="lg:col-span-7 space-y-6 lg:overflow-y-auto lg:pr-4 scrollbar-hide">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+              <Layout className="w-7 h-7 text-indigo-400" />
+              <span>Compose Post</span>
             </h1>
             <AIWriterDialog
               onGenerate={(text) => setContent(text)}
@@ -235,13 +241,13 @@ function ComposePageInner() {
             />
           </div>
 
-          <Card className="bg-white/5 border-white/10 rounded-[2.5rem] overflow-hidden">
-            <CardContent className="p-8 space-y-8">
+          <Card className="bg-white/5 border-white/10 rounded-3xl sm:rounded-[2.5rem] overflow-hidden">
+            <CardContent className="p-4 sm:p-6 lg:p-8 space-y-6 sm:space-y-8">
               {/* Account Selection */}
-              <div className="space-y-4">
-                <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-500" />
-                  Select Channels
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>Select Channels</span>
                 </label>
                 <PlatformSelector
                   selectedIds={selectedAccountIds}
@@ -251,22 +257,24 @@ function ComposePageInner() {
               </div>
 
               {/* Text Content */}
-              <div className="space-y-4">
+              <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
+                  <label htmlFor="compose-textarea" className="text-sm font-medium text-gray-300 flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-indigo-400" />
-                    Content
+                    <span>Content</span>
                   </label>
                   <div className="flex items-center gap-4">
                     <button 
+                      type="button"
                       onClick={() => setShowEmoji(!showEmoji)}
-                      className="text-gray-500 hover:text-white transition-colors"
+                      aria-label="Insert emoji"
+                      className="text-gray-400 hover:text-white transition-colors p-1 rounded-lg"
                     >
                       <Smile className="w-5 h-5" />
                     </button>
                     <span className={cn(
                       "text-xs font-mono",
-                      overLimit ? "text-rose-500" : "text-gray-500"
+                      overLimit ? "text-rose-400 font-bold" : "text-gray-400"
                     )}>
                       {content.length} / {contentLimit}
                     </span>
@@ -275,13 +283,15 @@ function ComposePageInner() {
                 
                 <div className="relative">
                   <textarea
+                    id="compose-textarea"
+                    aria-label="Post content"
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     placeholder="What's on your mind? Start typing or use AI Write..."
-                    className="w-full min-h-[220px] bg-white/5 border border-white/10 rounded-2xl p-6 text-white placeholder:text-gray-600 focus:outline-none focus:border-indigo-500/50 transition-all text-lg leading-relaxed resize-none"
+                    className="w-full min-h-[180px] sm:min-h-[220px] bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-6 text-white placeholder:text-gray-500 focus:outline-none focus:border-indigo-500/50 transition-all text-base sm:text-lg leading-relaxed resize-none min-w-0"
                   />
                   {showEmoji && (
-                    <div className="absolute top-12 right-0 z-50">
+                    <div className="absolute top-12 right-0 z-50 shadow-2xl">
                       <EmojiPicker onEmojiClick={onEmojiClick} theme={Theme.DARK} />
                     </div>
                   )}
@@ -289,83 +299,101 @@ function ComposePageInner() {
               </div>
 
               {/* Media Upload */}
-              <div className="space-y-4">
-                <label className="text-sm font-medium text-gray-400 flex items-center gap-2">
+              <div className="space-y-3">
+                <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-yellow-400" />
-                  Media Gallery
+                  <span>Media Gallery</span>
                 </label>
                 <MediaUpload urls={mediaUrls} onChange={setMediaUrls} />
               </div>
 
               {/* Action Bar */}
-              <div className="pt-6 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-6">
-                <div className="flex items-center gap-4 w-full sm:w-auto">
-                  <button 
-                    onClick={() => setIsScheduling(!isScheduling)}
-                    className={cn(
-                      "flex items-center gap-2 px-6 py-3 rounded-2xl border transition-all",
-                      isScheduling 
-                        ? "bg-indigo-500/10 border-indigo-500 text-indigo-400" 
-                        : "bg-white/5 border-white/10 text-gray-400 hover:border-white/20"
+              <div className="pt-6 border-t border-white/5 space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                    <button 
+                      type="button"
+                      onClick={() => setIsScheduling(!isScheduling)}
+                      className={cn(
+                        "flex items-center gap-2 px-4 py-2.5 sm:px-6 sm:py-3 rounded-2xl border transition-all text-xs sm:text-sm font-semibold min-h-11",
+                        isScheduling 
+                          ? "bg-indigo-500/15 border-indigo-500 text-indigo-300" 
+                          : "bg-white/5 border-white/10 text-gray-300 hover:border-white/20"
+                      )}
+                    >
+                      <Calendar className="w-4 h-4" />
+                      <span>{isScheduling ? "Schedule Mode Active" : "Schedule for Later"}</span>
+                    </button>
+                    
+                    {isScheduling && (
+                      <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-3 py-2 w-full sm:w-auto min-h-11 min-w-0">
+                        <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
+                        <input 
+                          type="datetime-local" 
+                          value={scheduledAt}
+                          onChange={(e) => setScheduledAt(e.target.value)}
+                          className="bg-transparent text-xs sm:text-sm text-white border-none focus:ring-0 outline-none min-w-0 w-full"
+                          aria-label="Select date and time for scheduling"
+                        />
+                      </div>
                     )}
-                  >
-                    <Calendar className="w-4 h-4" />
-                    {isScheduling ? "Scheduling Post" : "Publish Now"}
-                  </button>
-                  
-                  {isScheduling && (
-                    <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-2xl px-4 py-2">
-                      <Clock className="w-4 h-4 text-indigo-400" />
-                      <input 
-                        type="datetime-local" 
-                        value={scheduledAt}
-                        onChange={(e) => setScheduledAt(e.target.value)}
-                        className="bg-transparent text-sm text-white border-none focus:ring-0 outline-none"
-                      />
-                    </div>
-                  )}
-                </div>
+                  </div>
 
-                <Button
-                  onClick={() => handlePublish(isScheduling)}
-                  disabled={publishing || overLimit || hydratingFromQuery}
-                  className="w-full sm:w-auto px-10 py-6 rounded-2xl bg-indigo-600 hover:bg-indigo-500 shadow-[0_0_20px_rgba(79,70,229,0.3)] text-lg font-bold transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {publishing ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      {isScheduling ? "Schedule Post" : "Post Now"}
-                      <ChevronRight className="w-5 h-5 ml-2" />
-                    </>
-                  )}
-                </Button>
+                  <div className="flex items-center gap-3 w-full sm:w-auto">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleSaveDraft}
+                      disabled={savingDraft || publishing || hydratingFromQuery}
+                      className="flex-1 sm:flex-none border-white/10 text-gray-300 hover:text-white rounded-2xl h-11 px-5 text-sm font-semibold min-h-11"
+                    >
+                      {savingDraft ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                      <span>Save Draft</span>
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => handlePublish(isScheduling)}
+                      disabled={publishing || savingDraft || overLimit || hydratingFromQuery}
+                      className="flex-1 sm:flex-none px-6 sm:px-8 h-11 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-[0_0_20px_rgba(79,70,229,0.3)] transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50 min-h-11"
+                    >
+                      {publishing ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <>
+                          <span>{isScheduling ? "Schedule Post" : "Post Now"}</span>
+                          <ChevronRight className="w-4 h-4 ml-1" />
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Right Column: Previews (5 cols) */}
-        <div className="lg:col-span-5 h-full flex flex-col space-y-6">
-          <div className="flex items-center gap-3 px-2">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+        <div className="lg:col-span-5 lg:h-full flex flex-col space-y-4">
+          <div className="flex items-center gap-3 px-1">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <Eye className="w-5 h-5 text-indigo-400" />
-              Live Previews
+              <span>Live Previews</span>
             </h2>
             <div className="h-px flex-1 bg-white/10" />
           </div>
 
-          <Card className="bg-white/5 border-white/10 rounded-[2.5rem] flex-1 overflow-hidden">
-            <CardContent className="p-8 h-full flex flex-col">
-              <Tabs defaultValue="twitter" className="h-full flex flex-col" onValueChange={(v) => setPreviewPlatform(v as Platform)}>
-                <TabsList className="bg-white/5 border border-white/10 p-1.5 rounded-2xl mb-8 w-fit mx-auto">
-                  <TabsTrigger value="twitter" className="rounded-xl px-4 data-[state=active]:bg-indigo-500 data-[state=active]:text-white transition-all text-xs">Twitter</TabsTrigger>
-                  <TabsTrigger value="instagram" className="rounded-xl px-4 data-[state=active]:bg-indigo-500 data-[state=active]:text-white transition-all text-xs">Instagram</TabsTrigger>
-                  <TabsTrigger value="linkedin" className="rounded-xl px-4 data-[state=active]:bg-indigo-500 data-[state=active]:text-white transition-all text-xs">LinkedIn</TabsTrigger>
+          <Card className="bg-white/5 border-white/10 rounded-3xl sm:rounded-[2.5rem] flex-1 overflow-hidden min-w-0">
+            <CardContent className="p-4 sm:p-6 lg:p-8 h-full flex flex-col min-w-0">
+              <Tabs defaultValue="twitter" className="h-full flex flex-col min-w-0">
+                <TabsList className="bg-white/5 border border-white/10 p-1 rounded-2xl mb-6 grid grid-cols-3 w-full">
+                  <TabsTrigger value="twitter" className="rounded-xl data-[state=active]:bg-indigo-500 data-[state=active]:text-white transition-all text-xs font-semibold">Twitter</TabsTrigger>
+                  <TabsTrigger value="instagram" className="rounded-xl data-[state=active]:bg-indigo-500 data-[state=active]:text-white transition-all text-xs font-semibold">Instagram</TabsTrigger>
+                  <TabsTrigger value="linkedin" className="rounded-xl data-[state=active]:bg-indigo-500 data-[state=active]:text-white transition-all text-xs font-semibold">LinkedIn</TabsTrigger>
                 </TabsList>
 
-                <div className="flex-1 flex items-center justify-center p-4">
-                  <TabsContent value="twitter" className="w-full mt-0">
+                <div className="flex-1 flex items-center justify-center p-2 sm:p-4 min-w-0">
+                  <TabsContent value="twitter" className="w-full mt-0 min-w-0">
                     <PostPreview 
                       content={content} 
                       mediaUrls={mediaUrls} 
@@ -374,7 +402,7 @@ function ComposePageInner() {
                       avatarUrl={user?.imageUrl}
                     />
                   </TabsContent>
-                  <TabsContent value="instagram" className="w-full mt-0">
+                  <TabsContent value="instagram" className="w-full mt-0 min-w-0">
                     <PostPreview 
                       content={content} 
                       mediaUrls={mediaUrls} 
@@ -383,7 +411,7 @@ function ComposePageInner() {
                       avatarUrl={user?.imageUrl}
                     />
                   </TabsContent>
-                  <TabsContent value="linkedin" className="w-full mt-0">
+                  <TabsContent value="linkedin" className="w-full mt-0 min-w-0">
                     <PostPreview 
                       content={content} 
                       mediaUrls={mediaUrls} 
@@ -394,8 +422,8 @@ function ComposePageInner() {
                   </TabsContent>
                 </div>
 
-                <div className="mt-8 text-center">
-                  <p className="text-xs text-gray-500 italic">
+                <div className="mt-4 text-center">
+                  <p className="text-[11px] text-gray-400 italic">
                     * Previews are approximations. Real appearance may vary by platform.
                   </p>
                 </div>
@@ -404,11 +432,6 @@ function ComposePageInner() {
           </Card>
         </div>
       </div>
-      <UpgradeModal 
-        open={isUpgradeOpen} 
-        onOpenChange={setIsUpgradeOpen}
-        limitName={limitName}
-      />
     </div>
   );
 }

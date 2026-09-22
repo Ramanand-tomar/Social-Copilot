@@ -17,7 +17,7 @@ export interface QuotaResult {
  * Returns `allowed: false` if the quota is exhausted. Otherwise increments
  * `totalAiCaptions` by one and returns the new count.
  */
-export async function consumeAiQuota(userId: string, limit: number): Promise<QuotaResult> {
+export async function checkAiQuota(userId: string, limit: number): Promise<QuotaResult> {
   const now = new Date();
   const windowStart = new Date(now.getTime() - PERIOD_MS);
 
@@ -28,22 +28,27 @@ export async function consumeAiQuota(userId: string, limit: number): Promise<Quo
       .set({ totalAiCaptions: 0, aiCaptionsPeriodStart: now })
       .where(and(eq(users.id, userId), lt(users.aiCaptionsPeriodStart, windowStart)));
 
-    // Conditional increment. Returns nothing if the user is already at/above
-    // the limit, which we interpret as "not allowed".
+    const [current] = await tx
+      .select({ used: users.totalAiCaptions })
+      .from(users)
+      .where(eq(users.id, userId));
+
+    const used = current?.used ?? 0;
+    return { allowed: used < limit, used, limit };
+  });
+}
+
+export async function recordAiUsage(userId: string, limit: number): Promise<QuotaResult> {
+  return await db.transaction(async (tx) => {
     const incremented = await tx
       .update(users)
       .set({ totalAiCaptions: sql`${users.totalAiCaptions} + 1` })
       .where(and(eq(users.id, userId), lt(users.totalAiCaptions, limit)))
       .returning({ used: users.totalAiCaptions });
 
-    if (incremented.length === 0) {
-      const [current] = await tx
-        .select({ used: users.totalAiCaptions })
-        .from(users)
-        .where(eq(users.id, userId));
-      return { allowed: false, used: current?.used ?? limit, limit };
-    }
-
-    return { allowed: true, used: incremented[0].used, limit };
+    const used = incremented[0]?.used ?? limit;
+    return { allowed: true, used, limit };
   });
 }
+
+export const consumeAiQuota = recordAiUsage;

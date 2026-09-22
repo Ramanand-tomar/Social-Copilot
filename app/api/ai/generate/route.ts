@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { generateSocialCaptions, aiWritePost } from "@/lib/gemini";
 import { getPlanLimits } from "@/lib/plan-limits";
 import { aiGenerateSchema, badRequest } from "@/lib/validation";
-import { consumeAiQuota } from "@/lib/ai-quota";
+import { checkAiQuota, recordAiUsage } from "@/lib/ai-quota";
 import { ensureUserFromClerk } from "@/lib/users";
 import { enforceRateLimit } from "@/lib/rate-limit";
 
@@ -11,10 +11,8 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const { userId: clerkId } = await auth();
-  if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  // Protect Gemini billing and the DB from runaway automation scripts.
-  // Quota still applies on top of this — this is the per-minute burst cap.
   const limited = enforceRateLimit(`ai:${clerkId}`, 10, 60_000);
   if (limited) return limited;
 
@@ -28,28 +26,60 @@ export async function POST(req: NextRequest) {
     const data = parsed.data;
 
     const limits = getPlanLimits(user.subscriptionPlan);
-    const quota = await consumeAiQuota(user.id, limits.aiCaptionsPerMonth);
+    const quota = await checkAiQuota(user.id, limits.aiCaptionsPerMonth);
     if (!quota.allowed) {
       return NextResponse.json(
         {
           error: "limit_reached",
           limitName: "AI Generations",
           message: `Your ${user.subscriptionPlan} plan allows ${limits.aiCaptionsPerMonth} AI generations per month.`,
+          upgradeRequired: true,
         },
         { status: 403 },
       );
     }
 
-    if (data.type === "write") {
-      const content = await aiWritePost(data.prompt, data.maxChars);
-      return NextResponse.json({ content });
+    if (!process.env.GEMINI_API_KEY) {
+      console.error(JSON.stringify({ level: "error", route: "ai/generate", userId: user.id, errName: "ai_misconfigured", message: "GEMINI_API_KEY missing" }));
+      return NextResponse.json(
+        { error: "ai_misconfigured", message: "AI caption service is not properly configured." },
+        { status: 500 },
+      );
     }
 
-    const captions = await generateSocialCaptions(data.topic, data.platforms);
-    return NextResponse.json({ captions });
-  } catch (error) {
-    console.error("AI Generation failed:", error);
-    // Never leak raw errors — keep stacks on the server only.
+    let resultPayload: any;
+    if (data.type === "write") {
+      const content = await aiWritePost(data.prompt, data.maxChars);
+      resultPayload = { content };
+    } else {
+      const captions = await generateSocialCaptions(data.topic, data.platforms);
+      resultPayload = { captions };
+    }
+
+    await recordAiUsage(user.id, limits.aiCaptionsPerMonth);
+    return NextResponse.json(resultPayload);
+  } catch (error: any) {
+    const errStr = String(error?.message || error);
+    console.error(JSON.stringify({
+      level: "error",
+      route: "ai/generate",
+      errName: error?.name || "Error",
+      message: errStr,
+    }));
+
+    if (errStr.includes("429") || errStr.toLowerCase().includes("rate limit")) {
+      return NextResponse.json(
+        { error: "ai_rate_limited", message: "AI service rate limit reached. Please wait a moment and try again." },
+        { status: 429 },
+      );
+    }
+    if (errStr.toLowerCase().includes("safety") || errStr.toLowerCase().includes("blocked")) {
+      return NextResponse.json(
+        { error: "ai_blocked", message: "The generated content was flagged by safety filters. Please revise your prompt." },
+        { status: 422 },
+      );
+    }
+
     return NextResponse.json(
       { error: "ai_generation_failed", message: "We couldn't generate that right now. Please try again." },
       { status: 500 },

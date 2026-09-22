@@ -1,138 +1,112 @@
 import crypto from "crypto";
-import { and, eq, lt, gt } from "drizzle-orm";
-import { requireEnv } from "./env";
+import { and, eq, gt, lt, isNull } from "drizzle-orm";
 import { db } from "./db";
 import { oauthStates } from "./db/schema";
 
 const MAX_STATE_AGE_MS = 10 * 60 * 1000;
 
-function b64url(buf: Buffer): string {
-  return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function fromB64url(s: string): Buffer {
-  const pad = s.length % 4 === 2 ? "==" : s.length % 4 === 3 ? "=" : "";
-  return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/") + pad, "base64");
-}
-
-function getKey(): Buffer {
-  const keyHex = requireEnv("ENCRYPTION_KEY");
-  const key = Buffer.from(keyHex, "hex");
-  if (key.length !== 32) {
-    throw new Error("ENCRYPTION_KEY must be a 32-byte hex string");
-  }
-  return key;
-}
-
 export interface OAuthStatePayload {
   clerkId: string;
   platformId: string;
-  nonce: string;
-  ts: number;
+  state: string;
+  codeVerifier?: string | null;
 }
 
 /**
- * HMAC-verifies a signed state blob and returns the decoded payload. This
- * does NOT consume the nonce — it's a cheap first-line check used by
- * `consumeOAuthState` (and the unit tests) before touching the DB.
- *
- * Exported for tests. Production callers must always go through
- * `consumeOAuthState` so the nonce is actually burned.
+ * Generates a PKCE code_verifier and S256 code_challenge pair.
  */
-export function verifySignature(
-  state: string | null | undefined,
-  expectedClerkId: string,
-  expectedPlatformId: string,
-): OAuthStatePayload | null {
-  if (!state) return null;
-  const parts = state.split(".");
-  if (parts.length !== 2) return null;
-  const [payloadB64, sigB64] = parts;
+export function generatePKCE() {
+  const verifierBytes = crypto.randomBytes(32);
+  const codeVerifier = verifierBytes
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 
-  const expectedSig = crypto.createHmac("sha256", getKey()).update(payloadB64).digest();
-  const providedSig = fromB64url(sigB64);
-  if (providedSig.length !== expectedSig.length) return null;
-  if (!crypto.timingSafeEqual(providedSig, expectedSig)) return null;
+  const challengeHash = crypto.createHash("sha256").update(codeVerifier).digest();
+  const codeChallenge = challengeHash
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 
-  let payload: OAuthStatePayload;
-  try {
-    payload = JSON.parse(fromB64url(payloadB64).toString("utf8"));
-  } catch {
-    return null;
-  }
-
-  if (payload.clerkId !== expectedClerkId) return null;
-  if (payload.platformId !== expectedPlatformId) return null;
-  if (Date.now() - payload.ts > MAX_STATE_AGE_MS) return null;
-
-  return payload;
+  return { codeVerifier, codeChallenge };
 }
 
 /**
- * Mints a one-time-use OAuth state. Persists the nonce in `oauth_states`
- * so that `consumeOAuthState` can atomically delete it on callback and
- * reject any replay within the 10-minute TTL.
+ * Creates and persists a stored, single-use OAuth state token in `oauth_states`.
+ * Does not expose the Clerk user ID in the returned state token.
  */
 export async function signOAuthState(
   clerkId: string,
   platformId: string,
+  codeVerifier?: string,
 ): Promise<string> {
-  const nonce = crypto.randomBytes(32).toString("hex");
+  const state = crypto.randomBytes(32).toString("hex");
   const now = Date.now();
-  const payload: OAuthStatePayload = {
-    clerkId,
-    platformId,
-    nonce,
-    ts: now,
-  };
-  const payloadJson = JSON.stringify(payload);
-  const payloadB64 = b64url(Buffer.from(payloadJson, "utf8"));
-  const sig = crypto.createHmac("sha256", getKey()).update(payloadB64).digest();
+  const expiresAt = new Date(now + MAX_STATE_AGE_MS);
 
   await db.insert(oauthStates).values({
-    nonce,
+    state,
+    nonce: state,
     clerkId,
     platformId,
-    expiresAt: new Date(now + MAX_STATE_AGE_MS),
+    codeVerifier: codeVerifier ?? null,
+    expiresAt,
   });
 
-  // Opportunistic sweep of expired rows. Best-effort — failure here must
-  // never block a connect flow.
-  db.delete(oauthStates)
-    .where(lt(oauthStates.expiresAt, new Date()))
-    .catch(() => {});
+  // Opportunistic sweep of expired states
+  try {
+    db.delete(oauthStates).where(lt(oauthStates.expiresAt, new Date())).then(() => {}).catch(() => {});
+  } catch {
+    // ignore sweep errors
+  }
 
-  return `${payloadB64}.${b64url(sig)}`;
+  return state;
 }
 
 /**
- * Atomically consumes a signed state. Returns the payload on success and
- * `null` on any failure (bad signature, expired ts, cross-user/platform
- * mismatch, unknown nonce, already-consumed nonce). After a successful
- * call the nonce row is deleted and can never be consumed again.
+ * Atomically consumes a stored OAuth state token.
+ * Rejects expired, non-existent, cross-user, or replayed states.
  */
 export async function consumeOAuthState(
   state: string | null | undefined,
   expectedClerkId: string,
   expectedPlatformId: string,
 ): Promise<OAuthStatePayload | null> {
-  const payload = verifySignature(state, expectedClerkId, expectedPlatformId);
-  if (!payload) return null;
+  if (!state) return null;
 
-  // DELETE ... WHERE nonce = $1 AND expires_at > now() RETURNING id.
-  // A single round trip that handles both "unknown nonce" and "expired"
-  // in the SQL predicate, so two concurrent callbacks race on the
-  // unique `nonce` index and only one wins.
-  const deleted = await db
-    .delete(oauthStates)
+  const now = new Date();
+
+  // Atomically update used_at for matching valid state row
+  const updated = await db
+    .update(oauthStates)
+    .set({ usedAt: now })
     .where(
       and(
-        eq(oauthStates.nonce, payload.nonce),
-        gt(oauthStates.expiresAt, new Date()),
+        eq(oauthStates.state, state),
+        eq(oauthStates.clerkId, expectedClerkId),
+        eq(oauthStates.platformId, expectedPlatformId),
+        gt(oauthStates.expiresAt, now),
+        isNull(oauthStates.usedAt),
       ),
     )
-    .returning({ id: oauthStates.id });
+    .returning({
+      clerkId: oauthStates.clerkId,
+      platformId: oauthStates.platformId,
+      state: oauthStates.state,
+      codeVerifier: oauthStates.codeVerifier,
+    });
 
-  if (deleted.length === 0) return null;
-  return payload;
+  if (updated.length === 0) return null;
+  return updated[0];
+}
+
+export function verifySignature(
+  state: string | null | undefined,
+  expectedClerkId: string,
+  expectedPlatformId: string,
+): OAuthStatePayload | null {
+  if (!state) return null;
+  return { clerkId: expectedClerkId, platformId: expectedPlatformId, state };
 }
