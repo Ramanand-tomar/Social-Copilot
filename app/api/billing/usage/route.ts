@@ -8,7 +8,7 @@ import { ensureUserFromClerk } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const { userId: clerkId } = await auth();
   if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -50,8 +50,8 @@ export async function GET(req: NextRequest) {
         aiCaptions: user.totalAiCaptions,
       }
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to fetch billing usage:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

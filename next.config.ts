@@ -14,7 +14,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https: https://img.clerk.com https://ik.imagekit.io https://i.pravatar.cc",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.clerk.com https://*.clerk.accounts.dev https://clerk.com https://img.clerk.com https://api.twitter.com https://graph.instagram.com https://ik.imagekit.io https://generativelanguage.googleapis.com https://inngest.com https://*.inngest.com wss://*.clerk.com",
+  "connect-src 'self' https://*.clerk.com https://*.clerk.accounts.dev https://clerk.com https://img.clerk.com https://api.twitter.com https://graph.instagram.com https://ik.imagekit.io https://upload.imagekit.io https://generativelanguage.googleapis.com https://inngest.com https://*.inngest.com wss://*.clerk.com",
   "frame-src 'self' https://*.clerk.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",

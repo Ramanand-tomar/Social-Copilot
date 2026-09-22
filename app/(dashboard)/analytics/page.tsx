@@ -5,14 +5,12 @@ import {
   BarChart3, 
   TrendingUp, 
   Target, 
-  ArrowUpRight, 
   Sparkles,
   Lock,
-  Zap,
-  Layers
+  Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 
 export default function AnalyticsPage() {
   return (
@@ -40,7 +38,7 @@ export default function AnalyticsPage() {
             </h1>
             
             <p className="text-zinc-400 text-lg lg:text-xl leading-relaxed max-w-lg mx-auto lg:mx-0">
-              We're building an advanced AI analytics engine that goes beyond raw metrics. Predict trends, analyze sentiment, and optimize your reach automatically.
+              We&apos;re building an advanced AI analytics engine that goes beyond raw metrics. Predict trends, analyze sentiment, and optimize your reach automatically.
             </p>
 
             <div className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">

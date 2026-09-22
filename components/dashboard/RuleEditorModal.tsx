@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { X, Sparkles, MessageSquare, Zap, Target } from "lucide-react";
+import { X, Sparkles, Zap, Target } from "lucide-react";
 import { PlatformSelector } from "./PlatformSelector";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 interface RuleEditorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   rule?: any;
   onSaved: () => void;
   onLimitReached?: (limitName: string) => void;
@@ -111,8 +112,8 @@ export const RuleEditorModal = ({ open, onOpenChange, rule, onSaved, onLimitReac
       toast.success(rule ? "Rule updated" : "Rule created successfully!");
       onSaved();
       onOpenChange(false);
-    } catch (error: any) {
-      toast.error(error.message);
+    } catch (error: unknown) {
+      toast.error((error as Error).message);
     } finally {
       setLoading(false);
     }

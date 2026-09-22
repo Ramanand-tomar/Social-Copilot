@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 
 export default function CalendarPage() {
   const queryClient = useQueryClient();
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate] = useState(new Date());
 
   const start = startOfWeek(startOfMonth(currentDate));
   const end = endOfWeek(endOfMonth(currentDate));
@@ -46,7 +46,7 @@ export default function CalendarPage() {
       queryClient.invalidateQueries({ queryKey: ["posts"] });
       toast.success("Post rescheduled successfully");
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast.error(`Error: ${err.message}`);
     },
   });
@@ -62,7 +62,7 @@ export default function CalendarPage() {
           <AlertCircle className="w-10 h-10 text-red-400 mx-auto" />
           <h2 className="text-xl font-bold text-white">Failed to Load Calendar</h2>
           <p className="text-sm text-zinc-400">
-            {(error as any)?.message || "An unexpected error occurred while loading your scheduled posts."}
+            {(error as Error)?.message || "An unexpected error occurred while loading your scheduled posts."}
           </p>
           <Button
             onClick={() => refetch()}

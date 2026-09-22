@@ -1,20 +1,17 @@
 "use client";
 
 import React, { useState, useMemo, useCallback } from "react";
-import { Calendar, dateFnsLocalizer, Views, EventProps } from "react-big-calendar";
-import { format, parse, startOfWeek, getDay, addHours, startOfDay } from "date-fns";
+import { Calendar, dateFnsLocalizer, Views, EventProps, View } from "react-big-calendar";
+import { format, parse, startOfWeek, getDay, addHours } from "date-fns";
 import { enUS } from "date-fns/locale";
 import withDragAndDrop, { EventInteractionArgs } from "react-big-calendar/lib/addons/dragAndDrop";
 
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import "react-big-calendar/lib/addons/dragAndDrop/styles.css";
 
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { PostDetailSheet } from "./PostDetailSheet";
 
-// Localizer setup for react-big-calendar
 const locales = {
   "en-US": enUS,
 };
@@ -27,9 +24,10 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-const DnDCalendar = withDragAndDrop(Calendar);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const DnDCalendar = withDragAndDrop(Calendar) as React.ComponentType<any>;
 
-interface CalendarPost {
+export interface CalendarEventItem {
   id: string;
   title: string;
   start: Date;
@@ -37,100 +35,113 @@ interface CalendarPost {
   status: string;
   content: string;
   mediaUrls: string[];
+  raw: Record<string, unknown>;
 }
 
 interface CalendarViewProps {
-  posts: any[];
+  posts: Array<Record<string, unknown>>;
   onReschedule: (id: string, newDate: Date) => void;
   onRefresh: () => void;
 }
 
 const statusColors: Record<string, string> = {
   scheduled: "bg-indigo-500/20 border-indigo-500 text-indigo-200",
+  published: "bg-emerald-500/20 border-emerald-500 text-emerald-200",
   posted: "bg-emerald-500/20 border-emerald-500 text-emerald-200",
   draft: "bg-zinc-500/20 border-zinc-500 text-zinc-200",
   failed: "bg-red-500/20 border-red-500 text-red-200",
   partial: "bg-amber-500/20 border-amber-500 text-amber-200",
 };
 
-const CustomEvent = ({ event }: EventProps<any>) => {
+const CustomEvent = ({ event }: EventProps<CalendarEventItem>) => {
   return (
-    <div className={cn(
-      "px-2 py-1 rounded-sm border-l-4 h-full text-xs font-medium overflow-hidden truncate",
-      statusColors[event.status] || statusColors.draft
-    )}>
+    <div
+      className={cn(
+        "px-2 py-1 rounded-sm border-l-4 h-full text-xs font-medium overflow-hidden truncate",
+        statusColors[event.status] || statusColors.draft,
+      )}
+    >
       {event.title}
     </div>
   );
 };
 
 export const CalendarView = ({ posts, onReschedule, onRefresh }: CalendarViewProps) => {
-  const [view, setView] = useState<any>(Views.MONTH);
+  const [view, setView] = useState<View>(Views.MONTH);
   const [date, setDate] = useState(new Date());
-  const [selectedPost, setSelectedPost] = useState<any>(null);
+  const [selectedPost, setSelectedPost] = useState<Record<string, unknown> | null>(null);
 
-  const events = useMemo(() => {
-    return posts.map(p => {
+  const events = useMemo<CalendarEventItem[]>(() => {
+    return posts.map((p) => {
       const content: string = typeof p.content === "string" ? p.content : "";
-      const title = content.length === 0
-        ? "(No content)"
-        : content.length > 40
+      const title =
+        content.length === 0
+          ? "(No content)"
+          : content.length > 40
           ? `${content.substring(0, 40)}...`
           : content;
+
+      const timeSource = (p.scheduledAt || p.createdAt) as string | Date;
+      const startDate = new Date(timeSource);
       return {
-        id: p.id,
+        id: String(p.id),
         title,
-        start: new Date(p.scheduledAt || p.createdAt),
-        end: addHours(new Date(p.scheduledAt || p.createdAt), 1),
-        status: p.status,
+        start: startDate,
+        end: addHours(startDate, 1),
+        status: String(p.status || "draft"),
         content,
-        mediaUrls: p.mediaUrls,
+        mediaUrls: (p.mediaUrls as string[]) || [],
         raw: p,
       };
     });
   }, [posts]);
 
   const onEventResize = useCallback(
-    ({ event, start, end }: EventInteractionArgs<any>) => {
-      // In this app, we mostly care about start time (scheduledAt)
-      onReschedule(event.id, start as Date);
+    ({ event, start }: EventInteractionArgs<CalendarEventItem>) => {
+      const targetStart = start as Date;
+      if (targetStart.getTime() > Date.now() && (event.status === "scheduled" || event.status === "draft")) {
+        onReschedule(event.id, targetStart);
+      }
     },
-    [onReschedule]
+    [onReschedule],
   );
 
   const onEventDrop = useCallback(
-    ({ event, start }: EventInteractionArgs<any>) => {
-      onReschedule(event.id, start as Date);
+    ({ event, start }: EventInteractionArgs<CalendarEventItem>) => {
+      const targetStart = start as Date;
+      if (targetStart.getTime() > Date.now() && (event.status === "scheduled" || event.status === "draft")) {
+        onReschedule(event.id, targetStart);
+      }
     },
-    [onReschedule]
+    [onReschedule],
   );
 
   return (
-    <div className="h-[800px] w-full p-4 bg-background/50 rounded-xl border border-border backdrop-blur-sm">
+    <div className="h-[70vh] min-h-[500px] w-full p-4 bg-background/50 rounded-2xl border border-border backdrop-blur-sm">
       <DnDCalendar
         localizer={localizer}
         events={events}
-        startAccessor={(event: any) => event.start}
-        endAccessor={(event: any) => event.end}
+        startAccessor="start"
+        endAccessor="end"
         view={view}
-        onView={(v: any) => setView(v)}
+        onView={(v: View) => setView(v)}
         date={date}
-        onNavigate={(d: any) => setDate(d)}
-        onEventDrop={onEventDrop}
-        onEventResize={onEventResize}
-        onSelectEvent={(e: any) => setSelectedPost(e.raw)}
+        onNavigate={(d: Date) => setDate(d)}
+        onEventDrop={onEventDrop as unknown as (args: EventInteractionArgs<object>) => void}
+        onEventResize={onEventResize as unknown as (args: EventInteractionArgs<object>) => void}
+        onSelectEvent={(e: CalendarEventItem) => setSelectedPost(e.raw)}
         resizable
         selectable
         components={{
           event: CustomEvent,
-        } as any}
+        }}
         className="dark-calendar"
         style={{ height: "100%" }}
       />
 
-      <PostDetailSheet 
-        post={selectedPost} 
-        open={!!selectedPost} 
+      <PostDetailSheet
+        post={selectedPost}
+        open={!!selectedPost}
         onOpenChange={(open) => !open && setSelectedPost(null)}
         onDeleted={onRefresh}
         onUpdated={onRefresh}
@@ -155,7 +166,7 @@ export const CalendarView = ({ posts, onReschedule, onRefresh }: CalendarViewPro
         }
         .rbc-month-view, .rbc-time-view {
           border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 8px;
+          border-radius: 1rem;
         }
         .rbc-day-bg + .rbc-day-bg {
           border-left: 1px solid rgba(255, 255, 255, 0.05);

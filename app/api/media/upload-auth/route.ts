@@ -41,7 +41,7 @@ export async function GET() {
     }
 
     const params = getIKAuthenticationParameters();
-    return NextResponse.json(params);
+    return NextResponse.json({ ...params, folder: `/users/${user.id}` });
   } catch (error) {
     console.error("ImageKit auth error:", error);
     return NextResponse.json(

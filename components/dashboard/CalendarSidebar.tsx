@@ -12,20 +12,27 @@ import {
   Plus
 } from "lucide-react";
 import { format, isToday } from "date-fns";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
+export interface CalendarSidebarPost {
+  id: string;
+  content: string;
+  status: string;
+  scheduledAt?: string | null;
+}
+
 interface CalendarSidebarProps {
-  posts: any[];
+  posts: CalendarSidebarPost[];
 }
 
 export const CalendarSidebar = ({ posts }: CalendarSidebarProps) => {
   const stats = {
-    published: posts.filter(p => p.status === "posted").length,
-    scheduled: posts.filter(p => p.status === "scheduled").length,
-    failed: posts.filter(p => p.status === "failed").length,
-    drafts: posts.filter(p => p.status === "draft").length,
+    published: posts.filter((p) => p.status === "published" || p.status === "posted").length,
+    scheduled: posts.filter((p) => p.status === "scheduled").length,
+    failed: posts.filter((p) => p.status === "failed").length,
+    drafts: posts.filter((p) => p.status === "draft").length,
   };
 
   const upcomingToday = posts
@@ -119,7 +126,7 @@ export const CalendarSidebar = ({ posts }: CalendarSidebarProps) => {
         href="/compose"
         className={cn(
           buttonVariants({ variant: "default" }),
-          "w-full h-12 bg-white hover:bg-zinc-100 text-black font-bold text-sm shadow-[0_0_20px_rgba(255,255,255,0.1)] transition-all hover:scale-[1.02] flex items-center justify-center rounded-2xl"
+          "w-full h-12 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-[0_0_20px_rgba(79,70,229,0.3)] transition-all hover:scale-[1.02] flex items-center justify-center rounded-2xl"
         )}
       >
         <Plus className="h-4 w-4 mr-2" />

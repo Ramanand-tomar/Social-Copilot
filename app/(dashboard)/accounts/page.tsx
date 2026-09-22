@@ -1,24 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useUser } from "@clerk/nextjs";
 import { 
   Plus, 
   Trash2, 
   RefreshCw, 
   CheckCircle2, 
-  AlertCircle, 
   ExternalLink,
-  ChevronRight,
   Shield,
-  Zap
+  Zap,
+  Lock
 } from "lucide-react";
 import { toast } from "sonner";
 import { platforms, Platform } from "@/lib/social-platforms";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -33,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogClose,
 } from "@/components/ui/dialog";
 
 interface SocialAccount {
@@ -40,40 +38,53 @@ interface SocialAccount {
   platform: string;
   platformUsername: string;
   platformAccountId: string;
+  displayName?: string;
+  avatarUrl?: string;
   expiresAt: string | null;
 }
 
+interface PlatformState {
+  id: Platform;
+  name: string;
+  configured: boolean;
+  publishable: boolean;
+  available: boolean;
+  connected: boolean;
+  limitReached: boolean;
+}
+
 export default function AccountsPage() {
-  const { user } = useUser();
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [platformStates, setPlatformStates] = useState<Record<string, PlatformState>>({});
   const [loading, setLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [plan, setPlan] = useState<string>("free");
-  // Server-enforced cap from /api/billing/usage. Initialised to null so
-  // we can render a "—" placeholder until the first fetch resolves
-  // instead of flashing a wrong number.
   const [maxAccounts, setMaxAccounts] = useState<number | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [accRes, usageRes] = await Promise.all([
+      const [accRes, platRes] = await Promise.all([
         fetch("/api/accounts"),
-        fetch("/api/billing/usage")
+        fetch("/api/accounts/platforms"),
       ]);
 
       const accData = await accRes.json();
-      const usageData = await usageRes.json();
+      const platData = await platRes.json();
 
       setAccounts(accData.accounts || []);
-      setPlan(usageData.plan || "free");
-      // Read directly from the server response — no client-side plan
-      // table. This is the same source the POST /api/accounts/connect
-      // route enforces, so the UI cap can never drift from reality.
-      const apiLimit = usageData?.limits?.maxSocialAccounts;
-      setMaxAccounts(typeof apiLimit === "number" ? apiLimit : null);
-    } catch (error) {
-      toast.error("Failed to load dashboard data");
+
+      if (platData?.platforms && Array.isArray(platData.platforms)) {
+        const stateMap: Record<string, PlatformState> = {};
+        for (const p of platData.platforms) {
+          stateMap[p.id] = p;
+        }
+        setPlatformStates(stateMap);
+      }
+
+      if (typeof platData?.maxAccounts === "number") {
+        setMaxAccounts(platData.maxAccounts);
+      }
+    } catch {
+      toast.error("Failed to load account settings");
     } finally {
       setLoading(false);
     }
@@ -81,127 +92,156 @@ export default function AccountsPage() {
 
   useEffect(() => {
     fetchData();
+
+    // Parse URL query parameters for OAuth status messages
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const error = params.get("error");
+      const success = params.get("success");
+
+      if (error) {
+        const errorMessages: Record<string, string> = {
+          connect_failed: "Failed to initiate connection. Please try again.",
+          callback_failed: "OAuth callback failed. State token invalid or expired.",
+          account_limit: "You have reached the social accounts limit for your plan.",
+          profile_fetch_failed: "Unable to retrieve account details from provider.",
+          access_denied: "Access request was declined on provider.",
+          platform_not_configured: "This platform is not yet configured for authentication.",
+        };
+        toast.error(errorMessages[error] || `Connection failed (${error})`);
+        window.history.replaceState({}, "", "/accounts");
+      } else if (success) {
+        toast.success("Social account connected successfully!");
+        window.history.replaceState({}, "", "/accounts");
+      }
+    }
   }, []);
 
   const handleDisconnect = async (id: string) => {
     try {
       const res = await fetch(`/api/accounts/${id}`, { method: "DELETE" });
       if (res.ok) {
-        setAccounts(accounts.filter(a => a.id !== id));
+        setAccounts((prev) => prev.filter((a) => a.id !== id));
         toast.success("Account disconnected successfully");
       } else {
-        toast.error("Failed to disconnect account");
+        const data = await res.json();
+        toast.error(data.message || "Failed to disconnect account");
       }
-    } catch (error) {
-      toast.error("An error occurred");
-    } finally {
-      setDeletingId(null);
+    } catch {
+      toast.error("An error occurred while disconnecting");
     }
   };
 
-  const handleRefresh = async (id: string) => {
-    toast.promise(
-      fetch(`/api/accounts/${id}`, { method: "POST" }),
-      {
-        loading: 'Queuing refresh job...',
-        success: 'Refresh job queued successfully',
-        error: 'Failed to queue refresh job',
+  const handleSync = async (id: string) => {
+    try {
+      const res = await fetch(`/api/accounts/${id}`, { method: "POST" });
+      if (res.ok) {
+        toast.success("Account status synced successfully");
+      } else {
+        toast.error("Failed to sync account status");
       }
-    );
+    } catch {
+      toast.error("Network error during sync");
+    }
   };
 
-  // Source of truth is the API. Until it loads we treat the limit as
-  // "unknown" and disable connect actions to avoid letting a user start
-  // an OAuth flow that the server will then reject.
   const isLimitReached = maxAccounts !== null && accounts.length >= maxAccounts;
   const limitDisplay = maxAccounts === null ? "—" : String(maxAccounts);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-10">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/5 p-8 rounded-[2.5rem] border border-white/10">
-        <div className="space-y-2">
-          <h1 className="text-4xl font-bold text-white tracking-tight">Social Accounts</h1>
-          <p className="text-gray-400">Manage your connected platforms and sync permissions.</p>
+    <div className="space-y-8 animate-in fade-in duration-300 min-w-0">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white/5 p-6 sm:p-8 rounded-3xl border border-white/10">
+        <div className="space-y-1">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Social Accounts</h1>
+          <p className="text-xs sm:text-sm text-zinc-400">Manage connected platform accounts and permissions.</p>
         </div>
-        <div className="flex items-center gap-4 bg-indigo-500/10 px-6 py-4 rounded-3xl border border-indigo-500/20">
-          <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 flex items-center justify-center">
+        <div className="flex items-center gap-4 bg-indigo-500/10 px-5 py-3 rounded-2xl border border-indigo-500/20 shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-indigo-500/20 flex items-center justify-center">
             <Shield className="w-5 h-5 text-indigo-400" />
           </div>
           <div>
-            <div className="text-sm font-medium text-white">Plan Usage</div>
-            <div className="text-xl font-bold text-indigo-400">
-              {accounts.length} / {limitDisplay} <span className="text-xs font-normal text-gray-500">accounts</span>
+            <div className="text-xs font-medium text-white">Plan Connections</div>
+            <div className="text-lg font-bold text-indigo-400">
+              {accounts.length} / {limitDisplay} <span className="text-xs font-normal text-zinc-500">accounts</span>
             </div>
           </div>
         </div>
       </div>
 
       <div className="space-y-6">
-        <h2 className="text-2xl font-bold text-white flex items-center gap-3 px-2">
-          Connected Channels
-          <Badge variant="outline" className="rounded-full bg-emerald-500/10 text-emerald-500 border-emerald-500/20">
+        <h2 className="text-xl font-bold text-white flex items-center gap-3">
+          <span>Connected Channels</span>
+          <Badge variant="outline" className="rounded-full bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-xs px-2.5 py-0.5">
             {accounts.length} Active
           </Badge>
         </h2>
-        
+
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-48 bg-white/5 rounded-[2rem] animate-pulse border border-white/10" />
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="h-44 bg-white/5 rounded-3xl animate-pulse border border-white/10" />
             ))}
           </div>
         ) : accounts.length === 0 ? (
-          <div className="text-center py-20 bg-white/5 rounded-[3rem] border border-dashed border-white/10">
-            <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-6">
-              <Plus className="w-10 h-10 text-gray-500" />
+          <div className="text-center py-16 bg-white/5 rounded-3xl border border-dashed border-white/10 p-6">
+            <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Plus className="w-8 h-8 text-zinc-500" />
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">No accounts connected</h3>
-            <p className="text-gray-400 mb-8">Start by connecting your first social platform below.</p>
+            <h3 className="text-lg font-bold text-white mb-1">No accounts connected</h3>
+            <p className="text-xs text-zinc-400 mb-6">Select an available platform below to connect your first channel.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {accounts.map((account) => (
-              <Card key={account.id} className="bg-white/5 border-white/10 rounded-[2rem] overflow-hidden group hover:bg-white/[0.08] transition-all duration-300">
-                <CardHeader className="p-8">
-                  <div className="flex justify-between items-start mb-4">
-                    <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <ExternalLink className="w-7 h-7 text-indigo-400" />
+              <Card key={account.id} className="bg-white/5 border-white/10 rounded-3xl overflow-hidden group hover:bg-white/[0.08] transition-all">
+                <CardHeader className="p-6">
+                  <div className="flex justify-between items-start mb-3">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <ExternalLink className="w-6 h-6 text-indigo-400" />
                     </div>
-                    <Badge className="bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-0 flex items-center gap-1.5 px-3 py-1 text-xs">
+                    <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 flex items-center gap-1 text-xs px-2.5 py-0.5">
                       <CheckCircle2 className="w-3 h-3" />
                       Connected
                     </Badge>
                   </div>
-                  <CardTitle className="text-xl text-white capitalize">{account.platform}</CardTitle>
-                  <CardDescription className="text-gray-400">@{account.platformUsername}</CardDescription>
+                  <CardTitle className="text-lg text-white capitalize">{account.platform}</CardTitle>
+                  <CardDescription className="text-zinc-400 text-xs">
+                    {account.displayName || `@${account.platformUsername}`}
+                  </CardDescription>
                 </CardHeader>
-                <CardFooter className="bg-white/5 p-6 flex justify-between border-t border-white/5">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => handleRefresh(account.id)}
-                    className="text-gray-400 hover:text-white flex items-center gap-2"
+                <CardFooter className="bg-white/5 p-4 flex justify-between border-t border-white/5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleSync(account.id)}
+                    className="text-zinc-400 hover:text-white flex items-center gap-1.5 text-xs rounded-xl h-8"
                   >
-                    <RefreshCw className="w-4 h-4" />
-                    Sync
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Sync</span>
                   </Button>
                   <Dialog>
-                    <DialogTrigger render={<Button variant="ghost" size="sm" className="text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 flex items-center gap-2" />}>
-                      <Trash2 className="w-4 h-4" />
-                      Disconnect
-                    </DialogTrigger>
-                    <DialogContent className="bg-[#0a0a1a] border-white/10 text-white rounded-[2rem]">
+                    <DialogTrigger render={
+                      <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300 hover:bg-red-500/10 flex items-center gap-1.5 text-xs rounded-xl h-8">
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Disconnect</span>
+                      </Button>
+                    } />
+                    <DialogContent className="bg-[#0f0f23] border-white/10 text-white rounded-3xl p-6 sm:p-8">
                       <DialogHeader>
-                        <DialogTitle>Disconnect Account?</DialogTitle>
-                        <DialogDescription className="text-gray-400">
-                          This will permanently remove the connection and cancel all pending posts for this channel.
+                        <DialogTitle className="text-xl font-bold">Disconnect Account?</DialogTitle>
+                        <DialogDescription className="text-zinc-400 text-xs leading-relaxed pt-2">
+                          This will remove the connection for <span className="text-white font-semibold">{account.displayName || `@${account.platformUsername}`}</span>. Scheduled posts targeting this account will fail unless updated.
                         </DialogDescription>
                       </DialogHeader>
-                      <DialogFooter className="mt-6 flex gap-4">
-                        <Button variant="outline" className="flex-1 bg-transparent hover:bg-white/5">Cancel</Button>
-                        <Button 
-                          variant="destructive" 
-                          className="flex-1 bg-rose-600 hover:bg-rose-700"
+                      <DialogFooter className="mt-6 flex flex-row gap-3">
+                        <DialogClose render={
+                          <Button variant="ghost" className="flex-1 text-zinc-400 hover:text-white rounded-xl h-10 text-xs">
+                            Cancel
+                          </Button>
+                        } />
+                        <Button
+                          variant="destructive"
+                          className="flex-1 bg-red-600 hover:bg-red-500 text-white rounded-xl h-10 text-xs font-semibold"
                           onClick={() => handleDisconnect(account.id)}
                         >
                           Confirm Disconnect
@@ -216,42 +256,58 @@ export default function AccountsPage() {
         )}
       </div>
 
-      <div className="space-y-8 pt-10">
-        <div className="flex items-center justify-between px-2">
-          <h2 className="text-2xl font-bold text-white">Add More Accounts</h2>
+      <div className="space-y-6 pt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-white">Add Social Channels</h2>
           {isLimitReached && (
-            <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/20 flex items-center gap-2 px-4 py-2">
+            <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 flex items-center gap-1.5 px-3 py-1 text-xs">
               <Zap className="w-3.5 h-3.5 fill-current" />
-              Upgrade to Pro for more slots
+              Upgrade to Pro for more channels
             </Badge>
           )}
         </div>
-        
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6">
           {(Object.keys(platforms) as Platform[]).map((p) => {
-            const platform = platforms[p];
-            const isConnected = accounts.some(acc => acc.platform === p);
-            
+            const platformConfig = platforms[p];
+            const pState = platformStates[p];
+            const isAvailable = pState ? pState.available : false;
+            const isConnected = accounts.some((acc) => acc.platform === p);
+
             return (
               <button
                 key={p}
-                disabled={isConnected || isLimitReached}
-                onClick={() => window.location.href = `/api/accounts/connect/${p}`}
-                className={`flex flex-col items-center justify-center p-8 rounded-[2rem] border transition-all duration-300 group ${
-                  isConnected 
-                    ? "bg-emerald-500/5 border-emerald-500/20 cursor-default" 
-                    : isLimitReached 
-                    ? "bg-white/5 border-white/5 opacity-50 cursor-not-allowed"
-                    : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-indigo-500/50 hover:-translate-y-1"
+                disabled={!isAvailable || isConnected || isLimitReached}
+                onClick={() => (window.location.href = `/api/accounts/connect/${p}`)}
+                className={`flex flex-col items-center justify-center p-6 rounded-3xl border transition-all text-center group ${
+                  isConnected
+                    ? "bg-emerald-500/5 border-emerald-500/20 cursor-default"
+                    : !isAvailable
+                    ? "bg-white/[0.02] border-white/[0.05] opacity-50 cursor-not-allowed"
+                    : isLimitReached
+                    ? "bg-white/5 border-white/5 opacity-60 cursor-not-allowed"
+                    : "bg-white/5 border-white/10 hover:bg-white/10 hover:border-indigo-500/50 hover:-translate-y-0.5 active:scale-95"
                 }`}
               >
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-4 transition-colors ${
-                  isConnected ? "bg-emerald-500/10" : "bg-white/5 group-hover:bg-indigo-500/10"
-                }`}>
-                  <Plus className={`w-6 h-6 ${isConnected ? "text-emerald-500" : "text-gray-400 group-hover:text-indigo-400"}`} />
+                <div
+                  className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-3 transition-colors ${
+                    isConnected
+                      ? "bg-emerald-500/10"
+                      : !isAvailable
+                      ? "bg-white/5 text-zinc-600"
+                      : "bg-white/5 group-hover:bg-indigo-500/10"
+                  }`}
+                >
+                  {!isAvailable ? (
+                    <Lock className="w-5 h-5 text-zinc-500" />
+                  ) : (
+                    <Plus className={`w-6 h-6 ${isConnected ? "text-emerald-400" : "text-zinc-400 group-hover:text-indigo-400"}`} />
+                  )}
                 </div>
-                <div className="text-sm font-bold text-white mb-1 capitalize">{platform.name}</div>
-                <div className="text-[10px] text-gray-500">{isConnected ? "Connected" : "Available"}</div>
+                <div className="text-xs sm:text-sm font-bold text-white mb-1 capitalize">{platformConfig.name}</div>
+                <div className="text-[10px] text-zinc-500 font-semibold">
+                  {isConnected ? "Connected" : !isAvailable ? "Coming Soon" : "Connect"}
+                </div>
               </button>
             );
           })}

@@ -26,26 +26,38 @@ export const getIKAuthenticationParameters = () => {
  * AI Transformations for ImageKit
  * Documentation: https://docs.imagekit.io/features/image-transformations/ai-powered-transformations
  */
-export const getAITransformedUrl = (url: string, transformation: "bg-remove" | "smart-crop" | "auto-enhance") => {
-  const ikUrl = new URL(url);
-  let tr = "";
+export const getAITransformedUrl = (
+  url: string,
+  transformation: "bg-remove" | "smart-crop" | "auto-enhance",
+) => {
+  if (!url) return url;
+  try {
+    const ikUrl = new URL(url);
+    let tr = "";
 
-  switch (transformation) {
-    case "bg-remove":
-      tr = "tr:e-bg_remove";
-      break;
-    case "smart-crop":
-      tr = "tr:w-1080,h-1080,cm-extract,fo-auto"; // AI-aware smart crop to 1:1
-      break;
-    case "auto-enhance":
-      tr = "tr:e-enhance";
-      break;
+    switch (transformation) {
+      case "bg-remove":
+        tr = "e-bgremove";
+        break;
+      case "smart-crop":
+        tr = "w-1080,h-1080,fo-auto";
+        break;
+      case "auto-enhance":
+        tr = "e-retouch";
+        break;
+    }
+
+    // Insert `tr:<transform>` right after host / root endpoint path
+    const parts = ikUrl.pathname.split("/").filter(Boolean);
+    if (parts[0]?.startsWith("tr:")) {
+      parts[0] = `tr:${tr}`;
+    } else {
+      parts.unshift(`tr:${tr}`);
+    }
+
+    ikUrl.pathname = "/" + parts.join("/");
+    return ikUrl.toString();
+  } catch {
+    return url;
   }
-
-  // Inject transformation into the path
-  const pathParts = ikUrl.pathname.split("/");
-  pathParts.splice(pathParts.length - 1, 0, tr);
-  ikUrl.pathname = pathParts.join("/");
-
-  return ikUrl.toString();
 };

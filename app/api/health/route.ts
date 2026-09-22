@@ -25,13 +25,14 @@ export async function GET() {
   }, 2000);
 
   const imagekitOk = await probeWithTimeout(async () => {
-    if (!process.env.IMAGEKIT_PRIVATE_KEY) throw new Error("Missing ImageKit key");
-    // Lightweight auth parameters calculation verifies ImageKit configuration & instance
-    getIK().getAuthenticationParameters();
+    if (!process.env.IMAGEKIT_PRIVATE_KEY || !process.env.NEXT_PUBLIC_IMAGEKIT_PUBLIC_KEY) {
+      throw new Error("Missing ImageKit keys");
+    }
+    // Real API reachability check: list files with limit=1
+    await getIK().listFiles({ limit: 1 });
   }, 2000);
 
   const inngestOk = await probeWithTimeout(async () => {
-    // Basic verification that Inngest signing or event keys are accessible
     const signingKey = process.env.INNGEST_SIGNING_KEY;
     const eventKey = process.env.INNGEST_EVENT_KEY;
     if (process.env.NODE_ENV === "production" && !signingKey && !eventKey) {

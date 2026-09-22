@@ -8,7 +8,7 @@ import { ensureUserFromClerk } from "@/lib/users";
 export const dynamic = "force-dynamic";
 
 export async function POST(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { userId: clerkId } = await auth();
@@ -30,7 +30,7 @@ export async function POST(
       .where(and(eq(notifications.id, notificationId), eq(notifications.userId, user.id)));
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Mark notification read error:", error);
     return NextResponse.json({ error: "Failed to mark notification read" }, { status: 500 });
   }

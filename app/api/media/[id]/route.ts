@@ -13,31 +13,34 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { userId: clerkId } = await auth();
-  if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
     const { id } = await params;
     const user = await ensureUserFromClerk(clerkId);
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
-    // 1. Get asset details to get ImageKit fileId
     const asset = await db.query.mediaAssets.findFirst({
       where: and(eq(mediaAssets.id, id), eq(mediaAssets.userId, user.id)),
     });
 
     if (!asset) return NextResponse.json({ error: "Asset not found" }, { status: 404 });
 
-    // 2. Delete from ImageKit
     const ik = getIK();
-    await ik.deleteFile(asset.imageKitFileId);
+    try {
+      await ik.deleteFile(asset.imageKitFileId);
+    } catch (ikErr) {
+      console.warn("ImageKit deleteFile warning (proceeding with DB deletion):", ikErr);
+    }
 
-    // 3. Delete from DB
-    await db.delete(mediaAssets)
+    await db
+      .delete(mediaAssets)
       .where(and(eq(mediaAssets.id, id), eq(mediaAssets.userId, user.id)));
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal error";
     console.error("Failed to delete media asset:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "media_delete_failed", message }, { status: 500 });
   }
 }

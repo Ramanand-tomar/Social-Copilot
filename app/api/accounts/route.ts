@@ -5,7 +5,7 @@ import { socialAccounts } from "@/lib/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { ensureUserFromClerk } from "@/lib/users";
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const { userId: clerkId } = await auth();
   if (!clerkId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Remove sensitive data before returning
-    const sanitizedAccounts = accounts.map(({ accessToken, refreshToken, ...rest }) => ({
+    const sanitizedAccounts = accounts.map(({ accessToken: _accessToken, refreshToken: _refreshToken, ...rest }) => ({
       ...rest,
     }));
 

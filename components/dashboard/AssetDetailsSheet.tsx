@@ -7,7 +7,6 @@ import {
   SheetHeader,
   SheetTitle,
   SheetDescription,
-  SheetFooter,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,15 +14,11 @@ import { Separator } from "@/components/ui/separator";
 import { Label } from "@/components/ui/label";
 import { 
   Copy, 
-  ExternalLink, 
   Trash2, 
   Sparkles, 
   Crop, 
-  Image as ImageIcon,
   Check,
   Zap,
-  Download,
-  Terminal
 } from "lucide-react";
 import { getAITransformedUrl } from "@/lib/imagekit";
 import { toast } from "sonner";
@@ -31,7 +26,8 @@ import { cn } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 interface AssetDetailsSheetProps {
-  asset: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  asset?: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDelete: (id: string) => void;

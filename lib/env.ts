@@ -4,12 +4,15 @@ const REQUIRED_SERVER_VARS = [
   "CLERK_SECRET_KEY",
   "CLERK_WEBHOOK_SECRET",
   "NEXT_PUBLIC_APP_URL",
-  // INNGEST_SIGNING_KEY / INNGEST_EVENT_KEY are required for production
-  // Inngest but the local dev server ships with ephemeral keys, so we only
-  // warn when they're missing rather than hard-fail at import time.
 ] as const;
 
 type RequiredVar = (typeof REQUIRED_SERVER_VARS)[number];
+
+export function validateServerEnv(): void {
+  for (const name of REQUIRED_SERVER_VARS) {
+    requireEnv(name);
+  }
+}
 
 export function requireEnv(name: RequiredVar | string): string {
   const value = process.env[name];

@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
     }
 
     const searchParams = req.nextUrl.searchParams;
-    const limit = Math.min(Number(searchParams.get("limit") || 50), 100);
+    const rawLimit = Number.parseInt(searchParams.get("limit") || "50", 10);
+    const limit = Math.max(1, Math.min(Number.isNaN(rawLimit) ? 50 : rawLimit, 100));
 
     const userRules = await db
       .select({ id: autoReplyRules.id })
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({ logs, total: logs.length });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Fetch auto-reply logs error:", error);
     return NextResponse.json({ error: "Failed to fetch logs" }, { status: 500 });
   }

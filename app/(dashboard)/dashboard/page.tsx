@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { DashboardCharts } from "@/components/dashboard/DashboardCharts";
 import { subDays, format } from "date-fns";
+import Link from "next/link";
 
 export default async function DashboardOverview() {
   const { userId: clerkId } = await auth();
@@ -166,10 +167,12 @@ export default async function DashboardOverview() {
             <h3 className="text-xl font-black text-white tracking-tight">Recent Activity</h3>
             <p className="text-xs text-zinc-500 mt-1 uppercase tracking-widest font-bold">Latest broadcast logs</p>
           </div>
-          <button className="text-indigo-400 text-xs font-black uppercase tracking-widest hover:text-indigo-300 transition-colors flex items-center gap-2 px-6 py-3 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl">
-            View All Logs
-            <ArrowUpRight className="w-3 h-3" />
-          </button>
+          <Link href="/auto-reply?tab=logs">
+            <button className="text-indigo-400 text-xs font-black uppercase tracking-widest hover:text-indigo-300 transition-colors flex items-center gap-2 px-6 py-3 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl">
+              <span>View All Logs</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
+          </Link>
         </div>
         
         <div className="overflow-x-auto">

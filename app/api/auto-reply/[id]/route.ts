@@ -39,14 +39,14 @@ export async function PATCH(
     if (!updatedRule) return NextResponse.json({ error: "Rule not found" }, { status: 404 });
 
     return NextResponse.json(updatedRule);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to update auto-reply rule:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
 
 export async function DELETE(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { userId: clerkId } = await auth();
@@ -64,8 +64,8 @@ export async function DELETE(
     if (!deletedRule) return NextResponse.json({ error: "Rule not found" }, { status: 404 });
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Failed to delete auto-reply rule:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

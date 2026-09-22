@@ -11,14 +11,16 @@ import { getIK } from "@/lib/imagekit";
 export const dynamic = "force-dynamic";
 
 const STORAGE_LIMITS: Record<string, number> = {
-  free: 500 * 1024 * 1024, // 500MB
-  pro: 10 * 1024 * 1024 * 1024, // 10GB
-  business: 100 * 1024 * 1024 * 1024, // 100GB
+  free: 500 * 1024 * 1024,
+  pro: 10 * 1024 * 1024 * 1024,
+  business: 100 * 1024 * 1024 * 1024,
 };
+
+const MAX_SINGLE_FILE_BYTES = 10 * 1024 * 1024; // 10MB
 
 export async function GET(req: NextRequest) {
   const { userId: clerkId } = await auth();
-  if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
     const user = await ensureUserFromClerk(clerkId);
@@ -26,46 +28,43 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search");
-    const type = searchParams.get("type"); // 'image', 'video'
+    const type = searchParams.get("type");
 
-    let whereClause = eq(mediaAssets.userId, user.id);
-
-    if (search || type) {
-      const conditions = [eq(mediaAssets.userId, user.id)];
-      if (search) conditions.push(ilike(mediaAssets.name, `%${search}%`));
-      if (type) conditions.push(eq(mediaAssets.fileType, type));
-      whereClause = and(...conditions) as any;
-    }
+    const conditions = [eq(mediaAssets.userId, user.id)];
+    if (search) conditions.push(ilike(mediaAssets.name, `%${search}%`));
+    if (type) conditions.push(eq(mediaAssets.fileType, type));
+    const whereClause = and(...conditions);
 
     const assets = await db.query.mediaAssets.findMany({
       where: whereClause,
       orderBy: (assets, { desc }) => [desc(assets.createdAt)],
     });
 
-    // Calculate total usage
-    const usageResult = await db.select({ total: sql<number>`sum(${mediaAssets.size})` })
+    const usageResult = await db
+      .select({ total: sql<number>`sum(${mediaAssets.size})` })
       .from(mediaAssets)
       .where(eq(mediaAssets.userId, user.id));
-    
+
     const currentUsage = Number(usageResult[0]?.total || 0);
     const limit = STORAGE_LIMITS[user.subscriptionPlan || "free"] || STORAGE_LIMITS.free;
 
-    return NextResponse.json({ 
-      assets, 
+    return NextResponse.json({
+      assets,
       usage: {
         used: currentUsage,
         limit,
-        percentage: Math.min(Math.round((currentUsage / limit) * 100), 100)
-      }
+        percentage: Math.min(Math.round((currentUsage / limit) * 100), 100),
+      },
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal error";
+    return NextResponse.json({ error: "media_fetch_failed", message }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   const { userId: clerkId } = await auth();
-  if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
     const user = await ensureUserFromClerk(clerkId);
@@ -76,12 +75,21 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) return badRequest(parsed.error);
     const { imageKitFileId } = parsed.data;
 
-    // Resolve provider-verified metadata from ImageKit. Trusting the
-    // client for size/mime would let it underreport bytes to dodge the
-    // storage quota or lie about the file type to bypass content-rule
-    // checks downstream.
+    // Deduplication check: prevent claiming a file ID already attached to another asset
+    const existingAsset = await db.query.mediaAssets.findFirst({
+      where: eq(mediaAssets.imageKitFileId, imageKitFileId),
+    });
+
+    if (existingAsset) {
+      return NextResponse.json(
+        { error: "file_already_exists", message: "This file has already been registered." },
+        { status: 400 },
+      );
+    }
+
     const ik = getIK();
-    let fileDetails;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let fileDetails: any;
     try {
       fileDetails = await ik.getFileDetails(imageKitFileId);
     } catch (err) {
@@ -99,8 +107,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ImageKit `getFileDetails` returns `size`, `url`, `name`, `thumbnail`,
-    // `fileType` ("image" | "non-image"), and an optional `mime`.
+    // Verify folder path isolation
+    const expectedFolderPrefix = `/users/${user.id}`;
+    const filePath = String(fileDetails.filePath ?? "");
+    if (!filePath.startsWith(expectedFolderPrefix)) {
+      ik.deleteFile(imageKitFileId).catch(() => {});
+      return NextResponse.json(
+        { error: "unauthorized_file_path", message: "File does not belong to your user directory." },
+        { status: 403 },
+      );
+    }
+
     const verifiedSize = Number(fileDetails.size ?? 0);
     const verifiedUrl = String(fileDetails.url ?? "");
     const verifiedName = fileDetails.name ?? null;
@@ -115,42 +132,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (verifiedSize > MAX_SINGLE_FILE_BYTES) {
+      ik.deleteFile(imageKitFileId).catch(() => {});
+      return NextResponse.json(
+        { error: "file_too_large", message: "Individual file size exceeds maximum 10 MB limit." },
+        { status: 400 },
+      );
+    }
+
     const plan = user.subscriptionPlan || "free";
     const limit = STORAGE_LIMITS[plan] || STORAGE_LIMITS.free;
 
-    const usageResult = await db.select({ total: sql<number>`sum(${mediaAssets.size})` })
+    const usageResult = await db
+      .select({ total: sql<number>`sum(${mediaAssets.size})` })
       .from(mediaAssets)
       .where(eq(mediaAssets.userId, user.id));
 
     const currentUsage = Number(usageResult[0]?.total || 0);
 
     if (currentUsage + verifiedSize > limit) {
-      // Roll back the orphaned ImageKit upload so quota dodging via
-      // "upload then 403" can't accumulate provider-side cost.
-      ik.deleteFile(imageKitFileId).catch((err) => {
-        console.error("Failed to roll back over-quota ImageKit file:", err);
-      });
+      ik.deleteFile(imageKitFileId).catch(() => {});
       return NextResponse.json(
-        { error: "storage_limit_reached", message: "Storage limit reached. Please upgrade your plan." },
+        { error: "storage_limit_reached", message: "Storage limit reached. Please upgrade your plan.", upgradeRequired: true },
         { status: 403 },
       );
     }
 
-    const [newAsset] = await db.insert(mediaAssets).values({
-      userId: user.id,
-      url: verifiedUrl,
-      imageKitFileId,
-      thumbnailUrl: verifiedThumbnail,
-      name: verifiedName,
-      size: verifiedSize,
-      mimeType: verifiedMime,
-      fileType: verifiedKind,
-    }).returning();
+    const [newAsset] = await db
+      .insert(mediaAssets)
+      .values({
+        userId: user.id,
+        url: verifiedUrl,
+        imageKitFileId,
+        thumbnailUrl: verifiedThumbnail,
+        name: verifiedName,
+        size: verifiedSize,
+        mimeType: verifiedMime,
+        fileType: verifiedKind,
+      } as typeof mediaAssets.$inferInsert)
+      .returning();
 
-    // Dispatch alt-text generation to Inngest. Previously this was a
-    // fire-and-forget async call, which gets killed when the serverless
-    // function's response completes. Inngest gives us durable execution
-    // and automatic retries.
     if (verifiedKind === "image") {
       await inngest.send({
         name: "media/alt-text.generate",
@@ -159,8 +180,9 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json(newAsset);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal error";
     console.error("Failed to save media asset:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "media_save_failed", message }, { status: 500 });
   }
 }

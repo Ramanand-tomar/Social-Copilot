@@ -30,10 +30,10 @@ import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 interface PostDetailSheetProps {
-  post: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  post?: any;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDeleted: () => void;
@@ -55,7 +55,6 @@ export const PostDetailSheet = ({
   onDeleted,
   onUpdated 
 }: PostDetailSheetProps) => {
-  const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -71,7 +70,7 @@ export const PostDetailSheet = ({
       toast.success("Post deleted successfully");
       onDeleted();
       onOpenChange(false);
-    } catch (error) {
+    } catch {
       toast.error("Error deleting post");
     } finally {
       setIsDeleting(false);
@@ -96,7 +95,7 @@ export const PostDetailSheet = ({
       toast.success("Post rescheduled successfully");
       onUpdated();
       onOpenChange(false);
-    } catch (error) {
+    } catch {
       toast.error("Error rescheduling post");
     } finally {
       setIsUpdating(false);

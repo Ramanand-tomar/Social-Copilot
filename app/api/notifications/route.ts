@@ -7,7 +7,7 @@ import { ensureUserFromClerk } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const { userId: clerkId } = await auth();
   if (!clerkId) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     const unreadCount = items.filter((n) => !n.readAt).length;
 
     return NextResponse.json({ notifications: items, unreadCount });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Fetch notifications error:", error);
     return NextResponse.json({ error: "Failed to fetch notifications" }, { status: 500 });
   }

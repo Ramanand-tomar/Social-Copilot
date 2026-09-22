@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUser } from "@clerk/nextjs";
 import { 
-  Send, 
   Calendar, 
   Clock, 
   Sparkles, 
@@ -17,7 +16,6 @@ import {
   ChevronRight,
   ShieldCheck,
   Save,
-  FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -84,17 +82,17 @@ function ComposePageInner() {
           const res = await fetch(`/api/posts?limit=200`);
           if (!res.ok) throw new Error("Failed to load post");
           const data = await res.json();
-          const post = (data.posts ?? []).find((p: any) => p.id === editingPostId);
+          const post = (data.posts ?? []).find((p: Record<string, unknown>) => p.id === editingPostId);
           if (!post || cancelled) return;
 
-          setContent(post.content ?? "");
-          setMediaUrls(Array.isArray(post.mediaUrls) ? post.mediaUrls : []);
+          setContent(typeof post.content === "string" ? post.content : "");
+          setMediaUrls(Array.isArray(post.mediaUrls) ? (post.mediaUrls as string[]) : []);
           setSelectedAccountIds(
-            Array.isArray(post.selectedAccounts) ? post.selectedAccounts : [],
+            Array.isArray(post.selectedAccounts) ? (post.selectedAccounts as string[]) : [],
           );
 
           if (post.scheduledAt) {
-            const d = new Date(post.scheduledAt);
+            const d = new Date(post.scheduledAt as string);
             const pad = (n: number) => String(n).padStart(2, "0");
             const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
               d.getDate(),
@@ -102,8 +100,8 @@ function ComposePageInner() {
             setScheduledAt(local);
             setIsScheduling(true);
           }
-        } catch (err: any) {
-          toast.error(err?.message ?? "Failed to load post for editing");
+        } catch (err: unknown) {
+          toast.error((err as Error)?.message ?? "Failed to load post for editing");
         } finally {
           if (!cancelled) setHydratingFromQuery(false);
         }
@@ -149,8 +147,8 @@ function ComposePageInner() {
 
       toast.success("Draft saved successfully!");
       await queryClient.invalidateQueries({ queryKey: ["posts"] });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to save draft");
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Failed to save draft");
     } finally {
       setSavingDraft(false);
     }
@@ -158,29 +156,28 @@ function ComposePageInner() {
 
   const handlePublish = async (isScheduled: boolean) => {
     if (!content && mediaUrls.length === 0) {
-      toast.error("Please add some content or media");
+      toast.error("Add some content or media to publish");
       return;
     }
+
     if (selectedAccountIds.length === 0) {
-      toast.error("Please select at least one account");
+      toast.error("Select at least one social account");
       return;
     }
+
+    if (overLimit) {
+      toast.error("Post content exceeds character limits for selected platforms");
+      return;
+    }
+
     if (isScheduled && !scheduledAt) {
-      toast.error("Please select a schedule time");
-      return;
-    }
-    if (content.length > contentLimit) {
-      toast.error(`Content exceeds the ${contentLimit}-character limit of your selected platforms.`);
+      toast.error("Please pick a scheduled date and time");
       return;
     }
 
     setPublishing(true);
-    try {
-      const scheduledAtIso = isScheduled ? new Date(scheduledAt).toISOString() : null;
-      const scheduledTimezone = isScheduled
-        ? Intl.DateTimeFormat().resolvedOptions().timeZone
-        : null;
 
+    try {
       const endpoint = editingPostId ? `/api/posts/${editingPostId}` : "/api/posts";
       const method = editingPostId ? "PATCH" : "POST";
 
@@ -191,36 +188,38 @@ function ComposePageInner() {
           content,
           mediaUrls,
           accountIds: selectedAccountIds,
-          scheduledAt: scheduledAtIso,
-          scheduledTimezone,
-          status: isScheduled ? "scheduled" : "posted",
+          scheduledAt: isScheduled ? new Date(scheduledAt).toISOString() : null,
+          intent: isScheduled ? "schedule" : "publish_now",
         }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
-        if (res.status === 403 && data.error === "limit_reached") {
-          openUpgradeModal(data.message, data.limitName);
+        if (data.upgradeRequired) {
+          openUpgradeModal(data.limitName || "Plan limit reached");
           return;
         }
-        throw new Error(data.message || "Failed to create post");
+        throw new Error(data.message || "Failed to publish post");
       }
 
-      toast.success(isScheduled ? "Post scheduled successfully!" : "Post published to queue!");
+      toast.success(
+        isScheduled ? "Post scheduled successfully!" : "Post published successfully!",
+      );
       await queryClient.invalidateQueries({ queryKey: ["posts"] });
 
       setContent("");
       setMediaUrls([]);
       setSelectedAccountIds([]);
       setScheduledAt("");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to publish post");
+    } catch (error: unknown) {
+      toast.error((error as Error).message || "Failed to publish post");
     } finally {
       setPublishing(false);
     }
   };
 
-  const onEmojiClick = (emojiData: any) => {
+  const onEmojiClick = (emojiData: { emoji: string }) => {
     setContent((prev) => prev + emojiData.emoji);
     setShowEmoji(false);
   };

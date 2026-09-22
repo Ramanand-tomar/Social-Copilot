@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    let resultPayload: any;
+    let resultPayload: Record<string, unknown>;
     if (data.type === "write") {
       const content = await aiWritePost(data.prompt, data.maxChars);
       resultPayload = { content };
@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
 
     await recordAiUsage(user.id, limits.aiCaptionsPerMonth);
     return NextResponse.json(resultPayload);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     const errStr = String(error?.message || error);
     console.error(JSON.stringify({

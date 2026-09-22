@@ -13,34 +13,76 @@ export default function SettingsPage() {
   const { user, isLoaded } = useUser();
   const [timezone, setTimezone] = useState<string>("");
   const [savingTz, setSavingTz] = useState(false);
+  const [availableTimezones, setAvailableTimezones] = useState<string[]>([]);
 
   useEffect(() => {
-    const defaultTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    setTimezone(defaultTz);
-  }, []);
+    let zones: string[] = [];
+    try {
+      if (typeof Intl !== "undefined" && "supportedValuesOf" in Intl) {
+        zones = Intl.supportedValuesOf("timeZone");
+      }
+    } catch {
+      // ignore fallback
+    }
 
-  const timezones = [
-    "UTC",
-    "America/New_York",
-    "America/Chicago",
-    "America/Denver",
-    "America/Los_Angeles",
-    "America/Toronto",
-    "Europe/London",
-    "Europe/Paris",
-    "Europe/Berlin",
-    "Asia/Tokyo",
-    "Asia/Shanghai",
-    "Asia/Kolkata",
-    "Australia/Sydney",
-  ];
+    if (!zones || zones.length === 0) {
+      zones = [
+        "UTC",
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "America/Toronto",
+        "Europe/London",
+        "Europe/Paris",
+        "Europe/Berlin",
+        "Asia/Tokyo",
+        "Asia/Shanghai",
+        "Asia/Kolkata",
+        "Asia/Calcutta",
+        "Australia/Sydney",
+      ];
+    }
+
+    setAvailableTimezones(zones);
+
+    const loadUserTz = async () => {
+      try {
+        const res = await fetch("/api/user");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.timezone) {
+            setTimezone(data.timezone);
+            return;
+          }
+        }
+      } catch {
+        // silent
+      }
+      const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      setTimezone(browserTz);
+    };
+
+    loadUserTz();
+  }, []);
 
   const handleSaveTimezone = async () => {
     setSavingTz(true);
     try {
-      toast.success(`Timezone updated to ${timezone}`);
+      const res = await fetch("/api/user", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timezone }),
+      });
+
+      if (res.ok) {
+        toast.success(`Timezone saved to ${timezone}`);
+      } else {
+        const data = await res.json();
+        toast.error(data.message || "Failed to update timezone");
+      }
     } catch {
-      toast.error("Failed to update timezone");
+      toast.error("Network error while updating timezone");
     } finally {
       setSavingTz(false);
     }
@@ -115,10 +157,10 @@ export default function SettingsPage() {
             <select
               value={timezone}
               onChange={(e) => setTimezone(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs sm:text-sm text-white focus:outline-none focus:border-indigo-500/50"
+              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs sm:text-sm text-white focus:outline-none focus:border-indigo-500/50 max-h-48"
               aria-label="Select preferred timezone"
             >
-              {timezones.map((tz) => (
+              {availableTimezones.map((tz) => (
                 <option key={tz} value={tz} className="bg-[#0a0a1a] text-white">
                   {tz}
                 </option>
@@ -129,7 +171,7 @@ export default function SettingsPage() {
               disabled={savingTz}
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl h-9 text-xs font-semibold"
             >
-              Save Timezone
+              {savingTz ? "Saving..." : "Save Timezone"}
             </Button>
           </CardContent>
         </Card>
@@ -173,6 +215,7 @@ export default function SettingsPage() {
                 cardBox: "w-full max-w-full shadow-none border-0 bg-transparent",
                 card: "bg-transparent shadow-none border-0 max-w-full",
                 navbar: "bg-white/[0.02] border-r border-white/[0.05] hidden md:flex",
+                navbarMobileMenuRow: "flex md:hidden",
                 headerTitle: "text-white text-lg",
                 headerSubtitle: "text-zinc-400 text-xs",
                 profileSectionTitleText: "text-white text-sm font-bold",

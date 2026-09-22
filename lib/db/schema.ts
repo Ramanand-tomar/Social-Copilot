@@ -37,6 +37,9 @@ export const socialAccounts = pgTable(
     platform: varchar("platform", { length: 50 }).notNull(),
     platformAccountId: text("platform_account_id").notNull(),
     platformUsername: text("platform_username"),
+    displayName: text("display_name"),
+    avatarUrl: text("avatar_url"),
+    status: varchar("status", { length: 20 }).default("active").notNull(),
     accessToken: text("access_token"),
     refreshToken: text("refresh_token"),
     expiresAt: timestamp("expires_at"),
@@ -62,13 +65,11 @@ export const posts = pgTable(
     content: text("content").notNull(),
     mediaUrls: jsonb("media_urls").default([]),
     scheduledAt: timestamp("scheduled_at"),
-    // IANA timezone the user was in when they scheduled the post. Stored so
-    // the UI can display "Publishes at 2:00 PM America/Toronto" even when
-    // the viewer's browser is in a different tz.
     scheduledTimezone: text("scheduled_timezone"),
     status: varchar("status", { length: 20 }).default("draft").notNull(),
     selectedAccounts: jsonb("selected_accounts").default([]).notNull(),
     publishLockAt: timestamp("publish_lock_at"),
+    scheduleVersion: integer("schedule_version").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

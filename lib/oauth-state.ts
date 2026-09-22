@@ -102,11 +102,4 @@ export async function consumeOAuthState(
   return updated[0];
 }
 
-export function verifySignature(
-  state: string | null | undefined,
-  expectedClerkId: string,
-  expectedPlatformId: string,
-): OAuthStatePayload | null {
-  if (!state) return null;
-  return { clerkId: expectedClerkId, platformId: expectedPlatformId, state };
-}
+

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { posts, socialAccounts } from "@/lib/db/schema";
-import { eq, desc, and, gte, lte, count, isNotNull, inArray, sql } from "drizzle-orm";
+import { eq, desc, and, gte, lte, isNotNull, inArray, sql, count } from "drizzle-orm";
 import { inngest } from "@/lib/inngest/client";
 import { getPlanLimits } from "@/lib/plan-limits";
 import { createPostSchema, listPostsQuerySchema, badRequest } from "@/lib/validation";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   const { userId: clerkId } = await auth();
-  if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const limited = enforceRateLimit(`posts:${clerkId}`, 30, 60_000);
   if (limited) return limited;
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     const raw = await req.json();
     const parsed = createPostSchema.safeParse(raw);
     if (!parsed.success) return badRequest(parsed.error);
-    const { content, mediaUrls, scheduledAt, scheduledTimezone, accountIds, status } = parsed.data;
+    const { content, mediaUrls, scheduledAt, scheduledTimezone, accountIds, status, intent } = parsed.data;
 
     const targetAccountIds = accountIds ?? [];
     let accountsForUser: { id: string; platform: string }[] = [];
@@ -57,77 +57,76 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const isScheduled = !!scheduledAt || status === "scheduled";
+    const derivedStatus =
+      intent === "publish_now"
+        ? "queued"
+        : intent === "schedule" || (scheduledAt && intent !== "draft")
+        ? "scheduled"
+        : intent === "draft"
+        ? "draft"
+        : status || "draft";
 
-    const newPost = await db.transaction(async (tx) => {
-      if (isScheduled) {
-        const [{ value: scheduledPostsCount }] = await tx
-          .select({ value: count() })
-          .from(posts)
-          .where(and(eq(posts.userId, user.id), eq(posts.status, "scheduled")));
+    const isScheduled = derivedStatus === "scheduled";
 
-        const limits = getPlanLimits(user.subscriptionPlan);
-        if (scheduledPostsCount >= limits.maxScheduledPosts) {
-          throw new PlanLimitError(
-            `Plan limit reached. Your ${user.subscriptionPlan} plan allows max ${limits.maxScheduledPosts} scheduled posts.`,
-            limits.maxScheduledPosts,
-          );
-        }
+    if (isScheduled) {
+      const [{ value: scheduledPostsCount }] = await db
+        .select({ value: count() })
+        .from(posts)
+        .where(and(eq(posts.userId, user.id), eq(posts.status, "scheduled")));
+
+      const limits = getPlanLimits(user.subscriptionPlan);
+      if (scheduledPostsCount >= limits.maxScheduledPosts) {
+        return NextResponse.json(
+          {
+            error: "limit_reached",
+            limitName: "Scheduled Posts",
+            message: `Plan limit reached. Your ${user.subscriptionPlan} plan allows max ${limits.maxScheduledPosts} scheduled posts.`,
+            limit: limits.maxScheduledPosts,
+            upgradeRequired: true,
+          },
+          { status: 403 },
+        );
       }
+    }
 
-      const [created] = await tx.insert(posts).values({
+    const [created] = await db
+      .insert(posts)
+      .values({
         userId: user.id,
         content: content ?? "",
         mediaUrls: mediaUrls ?? [],
         scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
         scheduledTimezone: scheduledTimezone ?? null,
-        status: status || (isScheduled ? "scheduled" : "posted"),
+        status: derivedStatus,
         selectedAccounts: targetAccountIds,
-      }).returning();
-      return created;
-    });
+        scheduleVersion: 1,
+      })
+      .returning();
 
-    if (newPost.status === "posted" && targetAccountIds.length > 0) {
+    if (created.status === "queued" && targetAccountIds.length > 0) {
       await inngest.send({
         name: "app/post.publish",
-        data: { postId: newPost.id, accountIds: targetAccountIds },
+        data: { postId: created.id, accountIds: targetAccountIds, scheduleVersion: 1 },
       });
-    } else if (newPost.status === "scheduled" && scheduledAt && targetAccountIds.length > 0) {
+    } else if (created.status === "scheduled" && scheduledAt && targetAccountIds.length > 0) {
       await inngest.send({
         name: "app/post.publish",
-        data: { postId: newPost.id, accountIds: targetAccountIds },
+        data: { postId: created.id, accountIds: targetAccountIds, scheduleVersion: 1 },
         ts: new Date(scheduledAt).getTime(),
       });
     }
 
-    return NextResponse.json(newPost);
-  } catch (error: any) {
-    if (error instanceof PlanLimitError) {
-      return NextResponse.json(
-        {
-          error: "limit_reached",
-          limitName: "Scheduled Posts",
-          message: error.message,
-          limit: error.limit,
-          upgradeRequired: true,
-        },
-        { status: 403 },
-      );
-    }
+    return NextResponse.json(created);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal server error";
     console.error("Failed to create post:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-class PlanLimitError extends Error {
-  constructor(message: string, public limit: number) {
-    super(message);
+    return NextResponse.json({ error: "post_creation_failed", message }, { status: 500 });
   }
 }
 
 export async function GET(req: NextRequest) {
   const { userId: clerkId } = await auth();
-  if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!clerkId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   try {
     const user = await ensureUserFromClerk(clerkId);
@@ -163,8 +162,9 @@ export async function GET(req: NextRequest) {
       .where(whereClause);
 
     return NextResponse.json({ posts: userPosts, total, limit, offset });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal server error";
     console.error("Failed to fetch posts:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: "post_fetch_failed", message }, { status: 500 });
   }
 }

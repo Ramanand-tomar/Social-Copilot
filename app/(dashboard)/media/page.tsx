@@ -6,16 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { 
-  Plus, 
   Search, 
-  Filter, 
   Grid2X2, 
-  List, 
   Image as ImageIcon, 
   Video, 
   HardDrive,
   Loader2,
-  RefreshCcw,
   CloudUpload,
   Layers
 } from "lucide-react";
@@ -25,13 +21,28 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
+export interface MediaAsset {
+  id: string;
+  url: string;
+  fileId?: string;
+  fileName?: string;
+  fileType?: string;
+  sizeBytes?: number;
+  width?: number;
+  height?: number;
+  createdAt?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: any;
+}
+
 export default function MediaLibraryPage() {
-  const [assets, setAssets] = useState<any[]>([]);
+  const [assets, setAssets] = useState<MediaAsset[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [usage, setUsage] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
-  const [selectedAsset, setSelectedAsset] = useState<any>(null);
+  const [selectedAsset, setSelectedAsset] = useState<MediaAsset | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
@@ -47,7 +58,7 @@ export default function MediaLibraryPage() {
       const data = await res.json();
       setAssets(data.assets || []);
       setUsage(data.usage || null);
-    } catch (error) {
+    } catch {
       toast.error("Error loading media library");
     } finally {
       setLoading(false);
@@ -73,12 +84,12 @@ export default function MediaLibraryPage() {
       toast.success("Asset deleted");
       // Refresh usage stats
       fetchMedia();
-    } catch (error) {
+    } catch {
       toast.error("Failed to delete asset");
     }
   };
 
-  const handleAssetClick = (asset: any) => {
+  const handleAssetClick = (asset: MediaAsset) => {
     setSelectedAsset(asset);
     setIsDetailsOpen(true);
   };

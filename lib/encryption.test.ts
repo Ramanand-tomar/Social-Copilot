@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { encrypt, decrypt } from "./encryption";
 
+const KEY_A = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const KEY_B = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
 beforeAll(() => {
-  // Deterministic test key (32 bytes / 64 hex).
-  process.env.ENCRYPTION_KEY =
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+  process.env.ENCRYPTION_KEY = KEY_A;
+  process.env.ENCRYPTION_KEY_VERSION = "1";
 });
 
 describe("encryption", () => {
@@ -25,7 +27,6 @@ describe("encryption", () => {
   it("rejects tampered authTag", () => {
     const ct = encrypt("secret");
     const parts = ct.split(":");
-    // Flip the auth tag
     parts[2] = "0".repeat(parts[2].length);
     const tampered = parts.join(":");
     expect(() => decrypt(tampered)).toThrow();
@@ -37,9 +38,33 @@ describe("encryption", () => {
   });
 
   it("decrypts legacy iv:tag:ct format too", () => {
-    // Forge a legacy-format ciphertext by dropping the version prefix.
     const ct = encrypt("legacy-value");
     const legacy = ct.replace(/^v1:/, "");
     expect(decrypt(legacy)).toBe("legacy-value");
+  });
+
+  it("supports key rotation (decryption of v1 ciphertext after rotating to v2 key)", () => {
+    // Encrypt under Key A (version 1)
+    process.env.ENCRYPTION_KEY = KEY_A;
+    process.env.ENCRYPTION_KEY_VERSION = "1";
+    const ctV1 = encrypt("secret-token-v1");
+
+    // Rotate keys: Key B becomes current (version 2), Key A becomes V1
+    process.env.ENCRYPTION_KEY = KEY_B;
+    process.env.ENCRYPTION_KEY_V1 = KEY_A;
+    process.env.ENCRYPTION_KEY_VERSION = "2";
+
+    // Decrypt v1 ciphertext under v2 active configuration
+    expect(decrypt(ctV1)).toBe("secret-token-v1");
+
+    // Encrypt under Key B (version 2)
+    const ctV2 = encrypt("secret-token-v2");
+    expect(ctV2.startsWith("v2:")).toBe(true);
+    expect(decrypt(ctV2)).toBe("secret-token-v2");
+
+    // Reset back to Key A for clean test environment
+    process.env.ENCRYPTION_KEY = KEY_A;
+    process.env.ENCRYPTION_KEY_VERSION = "1";
+    delete process.env.ENCRYPTION_KEY_V1;
   });
 });

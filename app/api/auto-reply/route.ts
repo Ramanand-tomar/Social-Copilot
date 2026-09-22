@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 class PlanLimitError extends Error {}
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const { userId: clerkId } = await auth();
   if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -25,8 +25,8 @@ export async function GET(req: NextRequest) {
     });
 
     return NextResponse.json({ rules });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
 
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json(newRule);
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof PlanLimitError) {
       return NextResponse.json(
         { error: "limit_reached", limitName: "Auto-Reply Rules", message: error.message },
@@ -78,6 +78,6 @@ export async function POST(req: NextRequest) {
       );
     }
     console.error("Failed to create auto-reply rule:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }

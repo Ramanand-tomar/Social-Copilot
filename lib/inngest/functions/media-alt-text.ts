@@ -3,7 +3,7 @@ import { inngest } from "../client";
 import { db } from "@/lib/db";
 import { mediaAssets } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { getGemini } from "@/lib/gemini";
+import { getGemini, getModelName } from "@/lib/gemini";
 
 const mediaAltTextEventSchema = z.object({
   assetId: z.string().uuid(),
@@ -50,7 +50,7 @@ export const mediaAltTextFunction = inngest.createFunction(
     // Pull the image bytes and hand them to Gemini in one step so Inngest
     // treats the external call as an idempotent unit.
     const altText = await step.run("generate-alt-text", async () => {
-      const model = getGemini().getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = getGemini().getGenerativeModel({ model: getModelName() });
       const prompt =
         "Describe this image in detail for an accessibility alt text. Be concise but descriptive. Only return the description text.";
 

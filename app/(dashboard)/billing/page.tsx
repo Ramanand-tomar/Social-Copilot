@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 export default function BillingPage() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -36,7 +37,7 @@ export default function BillingPage() {
       if (!res.ok) throw new Error("Failed to fetch usage data");
       const json = await res.json();
       setData(json);
-    } catch (error) {
+    } catch {
       toast.error("Failed to load billing information");
     } finally {
       setLoading(false);

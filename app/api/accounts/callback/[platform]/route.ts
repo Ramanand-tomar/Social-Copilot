@@ -10,8 +10,6 @@ import { getAppUrlFromRequest } from "@/lib/env";
 import { consumeOAuthState } from "@/lib/oauth-state";
 import { ensureUserFromClerk } from "@/lib/users";
 
-const PLATFORMS_WITH_REAL_PROFILE_FETCH: ReadonlySet<Platform> = new Set(["twitter", "instagram"]);
-
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ platform: string }> }

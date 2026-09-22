@@ -6,7 +6,7 @@ const nonEmpty = z.string().min(1).max(10_000);
 
 // ---------- Posts ----------
 
-const postStatus = z.enum(["draft", "scheduled", "posted", "failed", "partial"]);
+const postStatus = z.enum(["draft", "scheduled", "queued", "posted", "published", "failed", "partial"]);
 
 // A scheduled datetime sent by the client. Must be a valid ISO string.
 const isoDate = z
@@ -37,10 +37,11 @@ export const createPostSchema = z
     scheduledAt: isoDate.nullable().optional(),
     scheduledTimezone: ianaTimezone.nullable().optional(),
     status: postStatus.optional().default("draft"),
+    intent: z.enum(["draft", "publish_now", "schedule"]).optional(),
   })
   .refine(
     (data) => {
-      if (data.status === "draft") return true;
+      if (data.intent === "draft" || data.status === "draft") return true;
       return (data.accountIds?.length ?? 0) >= 1;
     },
     {
@@ -50,7 +51,7 @@ export const createPostSchema = z
   )
   .refine(
     (data) => {
-      if (data.status === "draft") return true;
+      if (data.intent === "draft" || data.status === "draft") return true;
       return (data.content?.length ?? 0) > 0 || (data.mediaUrls?.length ?? 0) > 0;
     },
     {
@@ -62,11 +63,12 @@ export const createPostSchema = z
 export const updatePostSchema = z.object({
   content: z.string().max(10_000).optional(),
   mediaUrls: z.array(z.string().url()).max(10).optional(),
-  accountIds: z.array(uuid).min(1).max(50).optional(),
+  accountIds: z.array(uuid).max(50).optional(),
   // null clears the schedule, undefined leaves it alone, string reschedules.
   scheduledAt: isoDate.nullable().optional(),
   scheduledTimezone: ianaTimezone.nullable().optional(),
   status: postStatus.optional(),
+  intent: z.enum(["draft", "publish_now", "schedule"]).optional(),
 });
 
 export const listPostsQuerySchema = z.object({
